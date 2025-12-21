@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化交易終端 v10.5 (Equity Curve)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary-color: #4361ee; --success-bg: #dcfce7; --success-text: #166534; --warning-bg: #fef9c3; --warning-text: #854d0e; --danger-text: #dc2626; --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background-color: #f1f5f9; color: #334155; padding-bottom: 60px; }
+        h1 { color: #1e293b; font-size: 1.8rem; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: var(--card-shadow); margin-bottom: 20px; border: 1px solid #e2e8f0; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin-bottom: 20px; margin-top: 10px; }
+        .stat-card { background: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; text-align: center; transition: all 0.2s; }
+        /* 新增：可點擊的卡片樣式 */
+        .stat-card.clickable { cursor: pointer; border-bottom: 3px solid var(--primary-color); }
+        .stat-card.clickable:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(67, 97, 238, 0.15); background: #eff6ff; }
+        
+        .stat-label { font-size: 0.85rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 1.5rem; font-weight: 800; color: #334155; margin-top: 5px; }
+        .stat-value.pos { color: #16a34a; }
+        .stat-value.neg { color: #dc2626; }
+
+        .single-bankroll { font-size: 1.1em; font-weight: bold; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; background: #eff6ff; padding: 10px; border-radius: 8px; border: 1px solid #bfdbfe; color: #1e40af; }
+        .single-bankroll input { border: none; background: transparent; font-size: 1.2em; font-weight: 800; color: #1e40af; width: 120px; border-bottom: 2px solid #bfdbfe; }
+        .single-bankroll input:focus { outline: none; border-bottom-color: #2563eb; }
+
+        .btn-group { margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
+        button { padding: 10px 20px; font-size: 14px; cursor: pointer; border: none; border-radius: 8px; background-color: var(--primary-color); color: white; font-weight: 600; transition: all 0.2s; }
+        button:hover { background-color: #304ffe; }
+        button:disabled { background-color: #cbd5e1; cursor: not-allowed; }
+        button.secondary { background-color: #64748b; }
+        button.secondary:hover { background-color: #475569; }
+        button.action-btn { padding: 5px 10px; font-size: 12px; margin-right: 5px; }
+        button.btn-win { background-color: #16a34a; }
+        button.btn-lose { background-color: #dc2626; }
+        button.btn-sell { background-color: #f59e0b; color: white; }
+        button.history-btn { background-color: #7c3aed; }
+        button.history-btn:hover { background-color: #6d28d9; }
+        button.history-active { background-color: #4c1d95; border: 2px solid #ddd; }
+        
+        .filter-group { display: flex; gap: 5px; margin-bottom: 10px; }
+        .filter-btn { padding: 6px 12px; font-size: 0.85em; background: #e2e8f0; color: #475569; border-radius: 20px; border: 1px solid #cbd5e1; cursor: pointer; transition: all 0.2s; }
+        .filter-btn:hover { background: #cbd5e1; }
+        .filter-btn.active { background: #334155; color: white; border-color: #334155; }
+
+        select { padding: 10px 15px; font-size: 16px; border-radius: 8px; border: 1px solid #cbd5e1; background-color: white; cursor: pointer; }
+        .table-container { overflow-x: auto; border-radius: 12px; box-shadow: var(--card-shadow); margin-bottom: 20px; }
+        table { border-collapse: collapse; width: 100%; background: white; min-width: 800px; }
+        th, td { padding: 12px; text-align: center; font-size: 14px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+        th { background-color: #f8fafc; color: #475569; font-weight: 700; }
+        tr.row-buy { background-color: var(--success-bg); }
+        tr.row-observe { background-color: var(--warning-bg); }
+        
+        .export-section { margin-top: 30px; text-align: center; padding-top: 20px; border-top: 1px dashed #cbd5e1; }
+        .btn-export { background-color: #0f172a; color: white; padding: 12px 24px; font-size: 1rem; }
+        .btn-export:hover { background-color: #1e293b; }
+
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 350px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal-row { margin-bottom: 15px; }
+        .modal-row label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .modal-row input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+        .signal-badge { padding: 4px 10px; border-radius: 20px; font-weight: 700; font-size: 0.9em; display: inline-block; }
+        .badge-buy { background-color: #ffffff; color: var(--success-text); border: 1px solid #86efac; cursor: pointer; text-decoration: underline; }
+        .badge-buy:hover { background-color: #dcfce7; }
+        .badge-observe { background-color: #ffffff; color: var(--warning-text); border: 1px solid #fde047; }
+        .badge-b2b { background-color: #7c3aed; color: white; font-size: 0.75em; padding: 2px 6px; border-radius: 4px; margin-left: 5px; font-weight: bold; border: 1px solid #6d28d9; }
+        
+        .section-title { font-size: 1.2rem; font-weight: bold; margin: 20px 0 10px 0; color: #334155; border-left: 5px solid var(--primary-color); padding-left: 10px; }
+        .calc-info { font-size: 0.9em; display: flex; justify-content: space-between; margin-top: 5px; }
+        .max-btn { cursor: pointer; color: var(--primary-color); font-weight: bold; margin-left: 8px; font-size: 0.9em; }
+        
+        #chartSection { display: none; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <h1>🚀 量化交易終端 v10.5</h1>
+    
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div>
+                <label style="font-weight:bold;">當前操作賽事：</label>
+                <select id="sportSelect" onchange="changeSport()">
+                    <option value="nhl">🏒 NHL Hockey</option>
+                    <option value="nfl">🏈 NFL Football</option>
+                    <option value="ncaaf">🎓 NCAA Football</option>
+                    <option value="nba">🏀 NBA Basketball</option>
+                </select>
+            </div>
+            <div id="nbaVersionDisplay" style="font-size: 0.85em; color: #64748b; background: #f1f5f9; padding: 5px 10px; border-radius: 4px;">Loading...</div>
+        </div>
+
+        <div class="single-bankroll">
+            <span>💰 <span id="currentSportLabel">NHL</span> 資金池: $</span>
+            <input type="number" id="currentBankrollInput" onchange="updateCurrentBankroll(this.value)">
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">勝率 (Win Rate)</div>
+                <div class="stat-value" id="statWinRate">0%</div>
+            </div>
+            <div class="stat-card clickable" onclick="displayCapitalChart()" title="點擊查看資金走勢圖">
+                <div class="stat-label">總盈虧 (Total P&L) 📈</div>
+                <div class="stat-value" id="statPnL">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">投報率 (ROI)</div>
+                <div class="stat-value" id="statROI">0.00%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">最大回撤 (Max DD)</div>
+                <div class="stat-value neg" id="statDrawdown">0.00%</div>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button id="refreshBtn" onclick="fetchData()">🔄 刷新訊號 (Live)</button>
+            <button class="secondary" onclick="toggleOddsDisplay()">🔄 切換 ML / 隱含率</button>
+            <button class="secondary" onclick="clearHistory()" style="background-color: #ef4444;">🗑️ 重置所有數據</button>
+            <span id="status" style="margin-left: 10px; font-weight: bold;"></span>
+        </div>
+    </div>
+    
+    <div class="section-title">📡 實時訊號 (點擊注碼下注)</div>
+    <div class="table-container">
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th>日期</th><th>客隊</th><th>主隊</th><th>客勝率</th><th>主勝率</th>
+                    <th id="th-v-ml">客 ML</th><th id="th-h-ml">主 ML</th><th>策略建議</th><th>下注</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="section-title">📂 <span id="openBetsTitle">NHL</span> 持倉 (Open Positions)</div>
+    <div class="table-container">
+        <table id="openBetsTable">
+            <thead>
+                <tr>
+                    <th>ID</th><th>對象</th><th>持有股數</th><th>成本價</th><th>當前操作</th>
+                </tr>
+            </thead>
+            <tbody id="openBetsBody"></tbody>
+        </table>
+    </div>
+
+    <div class="section-title" style="border-left-color: #64748b;">📜 <span id="closedBetsTitle">NHL</span> 歷史帳本 (History)</div>
+    <div style="padding-left: 10px; margin-bottom: 5px;">
+        <div class="filter-group">
+            <button class="filter-btn active" id="filterAll" onclick="setHistoryFilter('all')">全部顯示 (All)</button>
+            <button class="filter-btn" id="filterSettled" onclick="setHistoryFilter('settled')">僅顯示結算 (Win/Lose)</button>
+            <button class="filter-btn" id="filterSold" onclick="setHistoryFilter('sold')">僅顯示賣出 (Sold)</button>
+        </div>
+    </div>
+    <div class="table-container">
+        <table id="closedBetsTable">
+            <thead>
+                <tr>
+                    <th>日期</th><th>對象</th><th>操作/結果</th><th>回報 (Payout)</th><th>損益 (P&L)</th><th>結餘</th>
+                </tr>
+            </thead>
+            <tbody id="closedBetsBody"></tbody>
+        </table>
+    </div>
+
+    <div class="export-section">
+        <button class="btn-export" onclick="exportData()">📥 匯出帳本數據 (Backup JSON)</button>
+    </div>
+
+    <div id="chartSection" class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h2 id="chartTitle" style="margin: 0; font-size: 1.2rem;">走勢圖</h2>
+            <button onclick="document.getElementById('chartSection').style.display='none'" class="secondary" style="padding: 5px 10px;">關閉</button>
+        </div>
+        <div id="chartContainer"><canvas id="myChart"></canvas></div>
+    </div>
+
+    <div id="betModal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-top:0;">📝 確認下注 (Buy)</h3>
+            <input type="hidden" id="modalSport">
+            <input type="hidden" id="modalTeam">
+            <div class="modal-row"><label>下注對象:</label><input type="text" id="modalTeamDisplay" disabled style="background:#f1f5f9;"></div>
+            <div class="modal-row"><label>下注金額 (USD):</label><input type="number" id="modalStake" step="1"></div>
+            <div class="modal-row"><label>買入價格 (Price):</label><input type="number" id="modalPrice" step="0.01" max="0.99"></div>
+            <div class="modal-row" style="background:#f0f9ff; padding:10px; border-radius:4px;">
+                <div class="calc-info"><span>預估股數 (Shares):</span><span id="calcShares" style="font-weight:bold;">0.00</span></div>
+                <div class="calc-info"><span>潛在獲利 (Profit):</span><span id="calcProfit" style="font-weight:bold; color:#16a34a;">$0.00</span></div>
+            </div>
+            <div class="modal-actions"><button class="secondary" onclick="closeModal('betModal')">取消</button><button onclick="confirmBet()">✅ 確認買入</button></div>
+        </div>
+    </div>
+
+    <div id="sellModal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-top:0;">💰 賣出持倉 (Sell/Cancel)</h3>
+            <input type="hidden" id="sellBetId">
+            <div class="modal-row"><label>賣出對象:</label><input type="text" id="sellTeamDisplay" disabled style="background:#f1f5f9;"></div>
+            <div class="modal-row">
+                <label>賣出數量 (Shares): <span style="font-size:0.8em; color:#64748b;">(持有: <span id="maxShares">0</span>)</span><span class="max-btn" onclick="setMaxShares()">[MAX]</span></label>
+                <input type="number" id="sellShares" step="0.01">
+            </div>
+            <div class="modal-row"><label>賣出價格 (Price):</label><input type="number" id="sellPrice" step="0.01" max="0.99"></div>
+            <div class="modal-row" style="background:#fff7ed; padding:10px; border-radius:4px;">
+                <div class="calc-info"><span>預估回報 (Payout):</span><span id="calcSellPayout" style="font-weight:bold;">$0.00</span></div>
+                <div class="calc-info"><span>本次損益 (P&L):</span><span id="calcSellPnL" style="font-weight:bold;">$0.00</span></div>
+            </div>
+            <div class="modal-actions"><button class="secondary" onclick="closeModal('sellModal')">取消</button><button class="btn-sell" onclick="confirmSell()">💸 確認賣出</button></div>
+        </div>
+    </div>
+    <script>
+    const urls = { nhl: 'https://www.dratings.com/predictor/nhl-hockey-predictions/', nfl: 'https://www.dratings.com/predictor/nfl-football-predictions/', ncaaf: 'https://www.dratings.com/predictor/ncaa-football-predictions/', nba: 'https://www.dratings.com/predictor/nba-basketball-predictions/' };
+    const winIndex = { nhl: 3, nfl: 3, ncaaf: 2, nba: 2 };
+    const mlIndex = { nhl: 4, nfl: 4, ncaaf: 3, nba: 3 };
+    let currentSport = 'nhl', history = {}, myChart = null;
+
+    function mlToNum(mlStr) { if (!mlStr) return null; const cleanStr = mlStr.replace('+', ''); const num = parseInt(cleanStr, 10); return isNaN(num) ? null : num; }
+    function getImpliedProb(ml) { if (ml === null) return 0; if (ml > 0) return 100 / (ml + 100); return Math.abs(ml) / (Math.abs(ml) + 100); }
+    function calculateWeightedROI(historyList) { if (!historyList || historyList.length === 0) return 0; let weightedSum = 0; let weightSum = 0; for (let i = 0; i < historyList.length; i++) { const weight = i + 1; weightedSum += historyList[i] * weight; weightSum += weight; } return weightedSum / weightSum; }
+
+    const nbaBackendData = { "last_update_date": "2025-12-20", "team_data": { "Charlotte Hornets": { "Home": [-0.260], "Away": [-0.955] }, "Washington Wizards": { "Home": [-0.873], "Away": [-0.488] }, "Toronto Raptors": { "Home": [-0.689], "Away": [] }, "Milwaukee Bucks": { "Home": [], "Away": [-0.627] }, "New Orleans Pelicans": { "Home": [-0.566], "Away": [-0.273] }, "Philadelphia 76ers": { "Home": [0.052], "Away": [-0.549] }, "Sacramento Kings": { "Home": [-0.540], "Away": [] }, "Dallas Mavericks": { "Home": [-0.449], "Away": [] }, "Phoenix Suns": { "Home": [-0.418], "Away": [-0.446] }, "Portland Trail Blazers": { "Home": [-0.425], "Away": [] }, "Miami Heat": { "Home": [], "Away": [-0.359] }, "Cleveland Cavaliers": { "Home": [-0.348], "Away": [] }, "Los Angeles Lakers": { "Home": [], "Away": [-0.309] }, "Brooklyn Nets": { "Home": [-0.293], "Away": [] }, "San Antonio Spurs": { "Home": [-0.236], "Away": [-0.137] }, "Los Angeles Clippers": { "Home": [], "Away": [-0.212] }, "Utah Jazz": { "Home": [-0.185], "Away": [-0.208] }, "Oklahoma City Thunder": { "Home": [], "Away": [-0.204] }, "Detroit Pistons": { "Home": [-0.155], "Away": [] }, "New York Knicks": { "Home": [-0.114], "Away": [0.751] }, "Golden State Warriors": { "Home": [-0.082], "Away": [0.255] }, "Houston Rockets": { "Home": [], "Away": [-0.056] }, "Chicago Bulls": { "Home": [], "Away": [-0.023] }, "Memphis Grizzlies": { "Home": [], "Away": [0.425] }, "Orlando Magic": { "Home": [], "Away": [0.098] }, "Boston Celtics": { "Home": [0.038], "Away": [] }, "Denver Nuggets": { "Home": [0.021], "Away": [] } } };
+
+    function findNbaKey(scrapedName, stateData) {
+        if (!stateData) return null;
+        if (stateData[scrapedName]) return scrapedName;
+        const dbKeys = Object.keys(stateData);
+        for (let key of dbKeys) {
+            const keyNick = key.split(' ').pop(); 
+            if (scrapedName.includes(keyNick) || key.includes(scrapedName)) return key;
+        }
+        return null; 
+    }
+        function calculateNbaStrategy(dateStr, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
+        if (vML === null || hML === null) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        const dateObj = new Date(dateStr); const month = dateObj.getMonth(); 
+        if (month === 9 || month === 1) return { signal: "Month Filter", stake: "PASS", color: "none", highlightTarget: null };
+        const vOdds = vML > 0 ? (vML/100)+1 : (100/Math.abs(vML))+1; const hOdds = hML > 0 ? (hML/100)+1 : (100/Math.abs(hML))+1;
+        function getPlattProb(rawProbPct) { const pRaw = rawProbPct / 100.0; const pSafe = Math.max(0.01, Math.min(0.99, pRaw)); const L = Math.log(pSafe / (1 - pSafe)); return 1 / (1 + Math.exp(-(1.1035 * L - 0.0954))); }
+        const vReal = getPlattProb(vModelProb); const hReal = getPlattProb(hModelProb); const vEV = vReal * vOdds; const hEV = hReal * hOdds;
+        let target = null, evValue = 0, teamName = "", location = "";
+        if (vEV > 1.08 && vOdds >= 1.50 && vOdds <= 5.00) { target = 'Visitor'; evValue = vEV; teamName = visitor; location = 'Away'; } 
+        else if (hEV > 1.08 && hOdds >= 1.50 && hOdds <= 5.00) { if (!(target === 'Visitor' && vEV >= hEV)) { target = 'Home'; evValue = hEV; teamName = home; location = 'Home'; } }
+        if (!target) return { signal: "No Value", stake: "-", color: "none", highlightTarget: null };
+        const dbKey = findNbaKey(teamName, nbaBackendData.team_data);
+        if (!dbKey) return { signal: `Name Mismatch (${teamName})`, stake: "Check Code", color: "observe", highlightTarget: null };
+        const teamHistory = nbaBackendData.team_data[dbKey];
+        const historyList = teamHistory ? (teamHistory[location] || []) : [];
+        const wROI = calculateWeightedROI(historyList);
+        if (wROI < -0.20) { return { signal: `[BL] ${dbKey} (${(wROI*100).toFixed(1)}%)`, stake: "Observe", color: "observe", highlightTarget: location === 'Home' ? 'home' : 'visitor' }; }
+        const stakeAmt = bankroll * 0.045; 
+        return { signal: `${target === 'Home' ? '[主]' : '[客]'} ${dbKey} (EV:${evValue.toFixed(2)})`, stake: `$${stakeAmt.toFixed(1)} (4.5%)`, color: "buy", highlightTarget: location === 'Home' ? 'home' : 'visitor' };
+    }
+
+    function calculateNhlStrategy(dateStr, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
+        const dateObj = new Date(dateStr);
+        if (!isNaN(dateObj.getTime()) && dateObj.getMonth() === 5) return { signal: "Observe (June)", stake: "0%", color: "observe", highlightTarget: null };
+        const vModel = vModelProb / 100.0; const hModel = hModelProb / 100.0;
+        if (vML === null || hML === null) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        const vPrice = getImpliedProb(vML); const hPrice = getImpliedProb(hML);
+        const vEdge = vModel - vPrice; const hEdge = hModel - hPrice;
+        let result = { type: null, ruleName: null, target: null, trueProb: 0, cap: 0, price: 0 };
+        if (hModel >= 0.60 && hModel <= 0.65 && hEdge >= 0.02) result = { type: 'Home', ruleName: '🚀 Home Ultra', target: home, trueProb: hModel + 0.08, cap: 0.08, price: hPrice };
+        else if (hModel >= 0.46 && hModel <= 0.48 && hEdge >= 0.03) result = { type: 'Home', ruleName: '💎 Home Hidden Gem', target: home, trueProb: hModel + 0.12, cap: 0.06, price: hPrice };
+        else if (hModel >= 0.25 && hModel <= 0.30 && hEdge >= -0.02) result = { type: 'Home', ruleName: '💰 Home Underdog', target: home, trueProb: hModel + 0.15, cap: 0.05, price: hPrice };
+        else if (hModel >= 0.45 && hModel <= 0.475 && hEdge < 0) result = { type: 'Home', ruleName: '📉 Home Market Wisdom', target: home, trueProb: hPrice + 0.05, cap: 0.04, price: hPrice };
+        else if (hModel >= 0.525 && hModel <= 0.55 && hEdge >= 0.02) result = { type: 'Home', ruleName: '✅ Home Mid-Value', target: home, trueProb: hModel + 0.025, cap: 0.03, price: hPrice };
+        else if (vModel >= 0.42 && vModel <= 0.44 && vEdge >= 0.05) result = { type: 'Away', ruleName: '🚀 Away Super Edge', target: visitor, trueProb: vModel + 0.15, cap: 0.06, price: vPrice };
+        else if (vModel >= 0.40 && vModel <= 0.45 && vEdge >= 0) result = { type: 'Away', ruleName: '🛡️ Away Stable', target: visitor, trueProb: vModel + 0.04, cap: 0.04, price: vPrice };
+        else if (vModel >= 0.25 && vModel <= 0.35 && vEdge < 0) result = { type: 'Away', ruleName: '📉 Away Wisdom', target: visitor, trueProb: vPrice + 0.08, cap: 0.04, price: vPrice };
+        else if (vModel >= 0.60 && vModel <= 0.65 && vEdge >= 0) result = { type: 'Away', ruleName: '⚔️ Away Favorite', target: visitor, trueProb: vModel + 0.05, cap: 0.04, price: vPrice };
+        else return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        const blacklistKeywords = ["Kraken", "Devils", "Penguins", "Utah"];
+        if (blacklistKeywords.some(kw => result.target.includes(kw))) return { signal: `${result.ruleName} (Blacklist)`, stake: "Observe", color: "observe", highlightTarget: result.type === 'Home' ? 'home' : 'visitor' };
+        if (result.target.includes("Canucks") && result.type === 'Home') return { signal: `${result.ruleName} (Canucks Home)`, stake: "Observe", color: "observe", highlightTarget: 'home' };
+        let kellyStake = 0; if (result.price < 1) kellyStake = ((result.trueProb - result.price) / (1.0 - result.price)) * 0.5;
+        if (kellyStake <= 0) return { signal: `${result.ruleName} (Neg EV)`, stake: "Skip", color: "none", highlightTarget: null };
+        let finalStakePct = Math.min(kellyStake, result.cap); let finalAmt = finalStakePct * bankroll;
+        return { signal: (result.type==='Home'?'[主] ':'[客] ') + result.ruleName, stake: `$${finalAmt.toFixed(1)} (${(finalStakePct * 100).toFixed(2)}%)`, color: "buy", highlightTarget: result.type === 'Home' ? 'home' : 'visitor' };
+    }
+
+    function calculateNflStrategy(dateStr, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
+        const vModel = vModelProb / 100.0; const hModel = hModelProb / 100.0;
+        if (vML === null || hML === null) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        const vPrice = getImpliedProb(vML); const hPrice = getImpliedProb(hML);
+        const vDec = vML > 0 ? (vML / 100) + 1 : (100 / Math.abs(vML)) + 1;
+        const dateObj = new Date(dateStr); const isJanuary = (!isNaN(dateObj.getTime()) && dateObj.getMonth() === 0);
+        let action = { type: null, target: null, cap: 0, reason: "" };
+        if (vModel >= 0.50 && vModel < 0.55) action = { type: 'Follow', target: visitor, cap: 0.088, reason: "Guest 50-55% (Follow)" };
+        else if (vModel >= 0.55 && vModel < 0.60) action = { type: 'Bet', target: home, cap: 0.05, reason: "Guest 55-60% (Fade)" };
+        else if (vModel >= 0.60 && vModel < 0.65) action = { type: 'Pass', target: null, cap: 0, reason: "Guest 60-65% (Pass)" };
+        else if (vModel >= 0.65 && vModel < 0.75) action = { type: 'Follow', target: visitor, cap: 0.088, reason: "Guest 65-75% (Follow)" };
+        else if (vModel >= 0.75 && vModel < 0.80) action = { type: 'Bet', target: home, cap: 0.10, reason: "Guest 75-80% (Fade)" };
+        else if (hModel >= 0.50 && hModel < 0.65) action = { type: 'Bet', target: visitor, cap: 0.08, reason: "Home 50-65% (Gold Zone)" };
+        else if (hModel >= 0.65 && hModel < 0.75) action = { type: 'Follow', target: home, cap: 0.053, reason: "Home 65-75% (Follow)" };
+        else if (hModel >= 0.75 && hModel < 0.80) action = { type: 'Bet', target: visitor, cap: 0.04, reason: "Home 75-80% (Fade)" };
+        else if (hModel >= 0.80 && hModel < 0.90) action = { type: 'Pass', target: null, cap: 0, reason: "Home 80-90% (Trap)" };
+        else if (hModel >= 0.90) action = { type: 'Follow', target: home, cap: 0.053, reason: "Home 90%+ (Follow)" };
+        const goldenBlacklistKW = ["Jaguars", "Jets", "Broncos"]; let isGoldenDog = false;
+        if (vDec >= 2.5 && vDec <= 4.0 && !goldenBlacklistKW.some(kw => visitor.includes(kw))) { isGoldenDog = true; action = { type: 'Golden', target: visitor, cap: 0.08, reason: "🏆 Golden Road Dog" }; if (visitor.includes("Steelers") || visitor.includes("Cardinals")) { action.cap = 0.12; action.reason += " (Boost)"; } }
+        const toxicKW = ["Jets", "49ers", "Falcons", "Panthers", "Cardinals", "Commanders", "Chargers"];
+        if (action.target && toxicKW.some(kw => action.target.includes(kw))) { return { signal: `Toxic Filter (Avoid ${action.target})`, stake: "Observe", color: "observe", highlightTarget: action.target === home ? 'home' : 'visitor' }; }
+        if (!action.target || action.type === 'Pass') return { signal: action.reason || "No Signal", stake: "-", color: "none", highlightTarget: null };
+        let p = (action.target === visitor) ? vModel : hModel; let q = (action.target === visitor) ? vPrice : hPrice;
+        if (isGoldenDog && p < 0.40) p = 0.40;
+        if (p <= q) return { signal: `${action.reason} (Neg EV)`, stake: "Skip", color: "none", highlightTarget: null };
+        let rawStake = ((p - q) / (1 - q)) * 1.35; if (isJanuary) rawStake = rawStake * 0.5;
+        let finalStakePct = Math.min(rawStake, action.cap); if (finalStakePct <= 0) return { signal: `${action.reason} (Low Edge)`, stake: "Skip", color: "none", highlightTarget: null };
+        let finalAmt = finalStakePct * bankroll;
+        return { signal: (action.target===home?'[主] ':'[客] ') + action.reason, stake: `$${finalAmt.toFixed(1)} (${(finalStakePct * 100).toFixed(2)}%${isJanuary?" Jan":""})`, color: "buy", highlightTarget: action.target===home ? 'home' : 'visitor' };
+    }
+
+    function calculateNcaafStrategy(dateStr, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
+        if (vML === null || hML === null) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        const vModel = vModelProb / 100.0; const hModel = hModelProb / 100.0;
+        const vPrice = getImpliedProb(vML); const hPrice = getImpliedProb(hML);
+        const vEdge = vModel - vPrice; const hEdge = hModel - hPrice;
+        const dateObj = new Date(dateStr); const month = dateObj.getMonth(); const day = dateObj.getDay(); const isWeekend = (day === 0 || day === 6);
+        let action = { name: null, target: null, type: null, p: 0, c: 0 }; let isTrap = false;
+        if (vEdge > 0.15) { if (month !== 8 && month !== 11) { if ((hML < -200 || hML > 100) && hPrice < 0.60) { action = { name: "🪤 Fade_Trap", target: home, type: 'Home', p: 0.60, c: hPrice }; isTrap = true; } } }
+        if ((vEdge > 0.15 || hEdge > 0.15) && !isTrap) return { signal: "High Edge Skip", stake: "-", color: "none", highlightTarget: null };
+        const allowedDays = [0, 2, 6];
+        if (!action.name && allowedDays.includes(day)) {
+            if (hML > 0 && hEdge > 0 && (month === 9 || month === 11) && isWeekend) action = { name: "🎯 Home_Sniper", target: home, type: 'Home', p: hModel, c: hPrice };
+            else if (hModel >= 0.75 && hModel <= 0.85 && hEdge >= 0.01 && month !== 7) action = { name: "🏰 Home_Core", target: home, type: 'Home', p: hModel, c: hPrice };
+            else if (vModel >= 0.55 && vModel <= 0.60 && vEdge >= 0.02 && vML <= 100 && month !== 8) action = { name: "🚌 Road_Value", target: visitor, type: 'Away', p: vModel, c: vPrice };
+            else if (hModel >= 0.90 && hEdge >= 0.01) action = { name: "⚓ Safe_Anchor", target: home, type: 'Home', p: hModel, c: hPrice };
+            else if (hModel >= 0.50 && hModel <= 0.55 && hEdge >= 0.02 && hML <= 100 && month !== 10) action = { name: "🏠 Home_Value", target: home, type: 'Home', p: hModel, c: hPrice };
+            else if (day === 0 && hModel >= 0.5 && hModel <= 0.8 && hEdge > 0) action = { name: "☀️ Sun_Home_Mid", target: home, type: 'Home', p: hModel, c: hPrice };
+            else if (day === 0 && vModel >= 0.6 && vModel <= 0.7 && vEdge > 0) action = { name: "☀️ Sun_Away_Gap", target: visitor, type: 'Away', p: vModel, c: vPrice };
+            else if ((month === 0 || month === 7) && vModel > 0.6 && vEdge > 0) action = { name: "🗓️ Away_Jan_Aug", target: visitor, type: 'Away', p: vModel, c: vPrice };
+        }
+        if (!action.name) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        if (action.p <= action.c) return { signal: `${action.name} (Neg EV)`, stake: "Skip", color: "none", highlightTarget: null };
+        let rawKelly = (action.p - action.c) / (1 - action.c); let wagerPct = Math.max(0, rawKelly) * 0.41; let finalAmt = wagerPct * bankroll;
+        return { signal: (action.type==='Home'?'[主] ':'[客] ') + action.name, stake: `$${finalAmt.toFixed(1)} (${(wagerPct * 100).toFixed(2)}%)`, color: "buy", highlightTarget: action.type === 'Home' ? 'home' : 'visitor' };
+    }
+        let showImpliedOdds = false;
+    let historyFilter = 'all'; 
+    let bettingData = {
+        bankrolls: { nhl: 1000, nfl: 1000, ncaaf: 1000, nba: 1000 },
+        openBets: [],   
+        closedBets: []  
+    };
+
+    function loadBettingData() {
+        const saved = localStorage.getItem('pms_betting_data_v3'); 
+        if (saved) bettingData = JSON.parse(saved);
+        updateUI();
+    }
+
+    function saveBettingData() {
+        localStorage.setItem('pms_betting_data_v3', JSON.stringify(bettingData));
+        updateUI();
+    }
+
+    function updateCurrentBankroll(value) {
+        bettingData.bankrolls[currentSport] = parseFloat(value);
+        saveBettingData();
+        fetchData();
+    }
+
+    function updateUI() {
+        document.getElementById('currentSportLabel').textContent = currentSport.toUpperCase();
+        document.getElementById('currentBankrollInput').value = bettingData.bankrolls[currentSport].toFixed(2);
+        document.getElementById('openBetsTitle').textContent = currentSport.toUpperCase();
+        document.getElementById('closedBetsTitle').textContent = currentSport.toUpperCase();
+        renderPortfolio();
+        calculateStatistics();
+    }
+
+    // --- Stats Logic ---
+    function calculateStatistics() {
+        const relevantBets = bettingData.closedBets.filter(b => b.sport === currentSport);
+        const totalBets = relevantBets.length;
+        if (totalBets === 0) {
+            document.getElementById('statWinRate').textContent = "0%";
+            document.getElementById('statPnL').textContent = "$0.00";
+            document.getElementById('statROI').textContent = "0.00%";
+            document.getElementById('statDrawdown').textContent = "0.00%";
+            return;
+        }
+
+        let wins = 0;
+        let totalPnL = 0;
+        let totalInvested = 0;
+        let peak = 0;
+        let maxDrawdown = 0;
+        let runningPnL = 0;
+
+        const sortedBets = [...relevantBets].sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+        sortedBets.forEach(bet => {
+            if (bet.profit > 0) wins++;
+            totalPnL += bet.profit;
+            totalInvested += bet.stake;
+            runningPnL += bet.profit;
+            if (runningPnL > peak) peak = runningPnL;
+            let dd = peak - runningPnL;
+            if (dd > maxDrawdown) maxDrawdown = dd;
+        });
+
+        const winRate = (wins / totalBets) * 100;
+        const roi = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+        const currentBank = bettingData.bankrolls[currentSport];
+        const startBank = currentBank - totalPnL; 
+        const peakEquity = startBank + peak;
+        const ddPercent = peakEquity > 0 ? (maxDrawdown / peakEquity) * 100 : 0;
+
+        document.getElementById('statWinRate').textContent = winRate.toFixed(1) + "%";
+        
+        const pnlEl = document.getElementById('statPnL');
+        pnlEl.textContent = (totalPnL >= 0 ? '+' : '') + '$' + totalPnL.toFixed(2);
+        pnlEl.className = 'stat-value ' + (totalPnL >= 0 ? 'pos' : 'neg');
+
+        const roiEl = document.getElementById('statROI');
+        roiEl.textContent = (roi >= 0 ? '+' : '') + roi.toFixed(2) + "%";
+        roiEl.className = 'stat-value ' + (roi >= 0 ? 'pos' : 'neg');
+
+        document.getElementById('statDrawdown').textContent = "-" + ddPercent.toFixed(2) + "%";
+    }
+
+    // --- Capital Trend Chart ---
+    function displayCapitalChart() {
+        const closed = bettingData.closedBets.filter(b => b.sport === currentSport).sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0));
+        
+        if (closed.length === 0) { alert('尚無結算紀錄，無法繪製走勢圖'); return; }
+
+        const current = bettingData.bankrolls[currentSport];
+        const totalProfit = closed.reduce((sum, b) => sum + b.profit, 0);
+        const start = current - totalProfit;
+
+        let runningBalance = start;
+        const labels = ['Start'];
+        const data = [start];
+
+        closed.forEach((b, index) => {
+            runningBalance += b.profit;
+            labels.push(`Bet ${index+1} (${b.date})`);
+            data.push(runningBalance);
+        });
+
+        document.getElementById('chartTitle').textContent = `💰 ${currentSport.toUpperCase()} 資金權益曲線 (Equity Curve)`;
+        document.getElementById('chartSection').style.display = 'block';
+        
+        const ctx = document.getElementById('myChart').getContext('2d');
+        if (myChart) myChart.destroy();
+        
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, 'rgba(75, 192, 192, 0.6)');
+        gradient.addColorStop(1, 'rgba(75, 192, 192, 0.05)');
+
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '總資金 (Bankroll)',
+                    data: data,
+                    borderColor: '#16a34a',
+                    backgroundColor: gradient,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: false } }
+            }
+        });
+        document.getElementById('chartSection').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // --- Export Logic ---
+    function exportData() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(bettingData));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "pms_backup_" + new Date().toISOString().slice(0,10) + ".json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    }
+
+    // --- Filter Logic ---
+    function setHistoryFilter(type) {
+        historyFilter = type;
+        document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+        if (type === 'all') document.getElementById('filterAll').classList.add('active');
+        if (type === 'settled') document.getElementById('filterSettled').classList.add('active');
+        if (type === 'sold') document.getElementById('filterSold').classList.add('active');
+        renderPortfolio();
+    }
+
+    // --- Modal Logic ---
+    function openBetModal(team, stake, price) {
+        document.getElementById('modalSport').value = currentSport;
+        document.getElementById('modalTeam').value = team;
+        document.getElementById('modalTeamDisplay').value = team;
+        document.getElementById('modalStake').value = Math.round(stake);
+        document.getElementById('modalPrice').value = price || 0.5;
+        const updateCalc = () => {
+            const s = parseFloat(document.getElementById('modalStake').value) || 0;
+            const p = parseFloat(document.getElementById('modalPrice').value) || 0.01;
+            if(p <= 0) return;
+            const shares = s / p;
+            const profit = shares - s;
+            document.getElementById('calcShares').textContent = shares.toFixed(2);
+            document.getElementById('calcProfit').textContent = '$' + profit.toFixed(2);
+        };
+        document.getElementById('modalStake').oninput = updateCalc;
+        document.getElementById('modalPrice').oninput = updateCalc;
+        updateCalc();
+        document.getElementById('betModal').style.display = 'flex';
+    }
+
+    function setMaxShares() {
+        const betId = document.getElementById('sellBetId').value;
+        const bet = bettingData.openBets.find(b => b.id == betId);
+        if(bet) {
+            document.getElementById('sellShares').value = bet.shares;
+            document.getElementById('sellShares').dispatchEvent(new Event('input'));
+        }
+    }
+
+    function openSellModal(betId) {
+        const bet = bettingData.openBets.find(b => b.id === betId);
+        if(!bet) return;
+        document.getElementById('sellBetId').value = betId;
+        document.getElementById('sellTeamDisplay').value = bet.team;
+        document.getElementById('maxShares').textContent = bet.shares.toFixed(2);
+        document.getElementById('sellShares').value = bet.shares.toFixed(2);
+        document.getElementById('sellPrice').value = 0.50; 
+        const updateSellCalc = () => {
+            const shares = parseFloat(document.getElementById('sellShares').value) || 0;
+            const price = parseFloat(document.getElementById('sellPrice').value) || 0;
+            const payout = shares * price;
+            const costBasis = shares * bet.price; 
+            const pnl = payout - costBasis;
+            document.getElementById('calcSellPayout').textContent = '$' + payout.toFixed(2);
+            const pnlSpan = document.getElementById('calcSellPnL');
+            pnlSpan.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+            pnlSpan.style.color = pnl >= 0 ? '#16a34a' : '#dc2626';
+        };
+        document.getElementById('sellShares').oninput = updateSellCalc;
+        document.getElementById('sellPrice').oninput = updateSellCalc;
+        updateSellCalc();
+        document.getElementById('sellModal').style.display = 'flex';
+    }
+
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    function confirmBet() {
+        const sport = document.getElementById('modalSport').value;
+        const team = document.getElementById('modalTeam').value;
+        const stake = parseFloat(document.getElementById('modalStake').value);
+        const price = parseFloat(document.getElementById('modalPrice').value);
+        if (!stake || !price) { alert("請輸入有效金額與價格"); return; }
+        if (bettingData.bankrolls[sport] < stake) { alert("資金不足！"); return; }
+        bettingData.bankrolls[sport] -= stake;
+        const shares = stake / price; 
+        const bet = { id: Date.now(), sport: sport, date: new Date().toLocaleDateString(), team: team, stake: stake, price: price, shares: shares, timestamp: Date.now() };
+        bettingData.openBets.push(bet);
+        saveBettingData();
+        closeModal('betModal');
+        alert("下注成功！");
+    }
+
+    function confirmSell() {
+        const betId = parseInt(document.getElementById('sellBetId').value);
+        const sellShares = parseFloat(document.getElementById('sellShares').value);
+        const sellPrice = parseFloat(document.getElementById('sellPrice').value);
+        const betIdx = bettingData.openBets.findIndex(b => b.id === betId);
+        if(betIdx === -1) return;
+        const bet = bettingData.openBets[betIdx];
+        if(sellShares > bet.shares + 0.0001) { alert("賣出數量超過持有數量！"); return; }
+        const payout = sellShares * sellPrice;
+        const costBasis = sellShares * bet.price;
+        const profit = payout - costBasis;
+        bettingData.bankrolls[bet.sport] += payout;
+        const historyRecord = { date: new Date().toLocaleDateString(), sport: bet.sport, team: bet.team + (sellShares < bet.shares - 0.0001 ? " (Partial)" : ""), stake: costBasis, price: sellPrice, result: "sold", profit: profit, finalBankroll: bettingData.bankrolls[bet.sport], timestamp: Date.now() };
+        bettingData.closedBets.push(historyRecord);
+        if(Math.abs(sellShares - bet.shares) < 0.0001) { bettingData.openBets.splice(betIdx, 1); } else { bet.shares -= sellShares; bet.stake -= costBasis; }
+        saveBettingData();
+        closeModal('sellModal');
+    }
+
+    function settleBet(id, result) {
+        const idx = bettingData.openBets.findIndex(b => b.id === id);
+        if (idx === -1) return;
+        const bet = bettingData.openBets[idx];
+        let profit = 0; let payout = 0;
+        if (result === 'win') { payout = bet.shares * 1.00; profit = payout - bet.stake; bettingData.bankrolls[bet.sport] += payout; } else { profit = -bet.stake; }
+        const closedBet = { date: new Date().toLocaleDateString(), sport: bet.sport, team: bet.team, stake: bet.stake, price: bet.price, result: result, profit: profit, finalBankroll: bettingData.bankrolls[bet.sport], timestamp: Date.now() };
+        bettingData.closedBets.push(closedBet);
+        bettingData.openBets.splice(idx, 1);
+        saveBettingData();
+    }
+        function renderPortfolio() {
+        const openBody = document.getElementById('openBetsBody'); openBody.innerHTML = '';
+        const currentOpenBets = bettingData.openBets.filter(b => b.sport === currentSport);
+        currentOpenBets.forEach(bet => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${bet.id.toString().slice(-4)}</td><td><b>${bet.team}</b></td><td>${bet.shares.toFixed(2)}</td><td>${bet.price.toFixed(2)}</td><td><button class="action-btn btn-win" onclick="settleBet(${bet.id}, 'win')">✅ WIN</button><button class="action-btn btn-lose" onclick="settleBet(${bet.id}, 'lose')">❌ LOSE</button><button class="action-btn btn-sell" onclick="openSellModal(${bet.id})">💰 賣出</button></td>`;
+            openBody.appendChild(tr);
+        });
+
+        const closedBody = document.getElementById('closedBetsBody'); closedBody.innerHTML = '';
+        const currentClosedBets = bettingData.closedBets.filter(b => b.sport === currentSport);
+        
+        let filteredBets = currentClosedBets;
+        if (historyFilter === 'settled') filteredBets = currentClosedBets.filter(b => b.result !== 'sold');
+        if (historyFilter === 'sold') filteredBets = currentClosedBets.filter(b => b.result === 'sold');
+
+        const recentClosed = [...filteredBets].reverse().slice(0, 10);
+        recentClosed.forEach(bet => {
+            const tr = document.createElement('tr');
+            const color = bet.profit > 0 ? '#16a34a' : '#dc2626';
+            let actionType = bet.result.toUpperCase();
+            if (bet.result === 'sold') actionType = '<span style="color:#f59e0b">SOLD</span>';
+            else if (bet.result === 'win') actionType = '<span style="color:#16a34a">WIN</span>';
+            else actionType = '<span style="color:#dc2626">LOSE</span>';
+
+            tr.innerHTML = `<td>${bet.date}</td><td>${bet.team}</td><td>${actionType}</td><td>$${(bet.profit + bet.stake).toFixed(2)}</td><td style="color:${color}; font-weight:bold;">${bet.profit > 0 ? '+' : ''}$${bet.profit.toFixed(1)}</td><td>$${bet.finalBankroll.toFixed(1)}</td>`;
+            closedBody.appendChild(tr);
+        });
+    }
+
+    function toggleOddsDisplay() { showImpliedOdds = !showImpliedOdds; fetchData(); }
+    function changeSport() { currentSport = document.getElementById('sportSelect').value; updateUI(); fetchData(); } 
+    function clearHistory() { if (confirm('警告：這將清除所有資金與下注紀錄！')) { localStorage.removeItem('pms_betting_data_v3'); location.reload(); } }
+
+    async function fetchData() {
+        const sport = currentSport; const url = urls[sport]; const status = document.getElementById('status');
+        const tbody = document.querySelector('#resultTable tbody'); 
+        const bankroll = bettingData.bankrolls[sport];
+        status.textContent = '更新中...'; tbody.innerHTML = '';
+
+        try {
+            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+            const response = await fetch(proxyUrl);
+            if (!response.ok) throw new Error('Network Error');
+            const html = await response.text();
+            const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html');
+            const table = doc.querySelector('table');
+            if (!table || table.querySelectorAll('tbody tr').length === 0) throw new Error('無比賽資料');
+            
+            document.getElementById('th-v-ml').textContent = showImpliedOdds ? '客 隱含率' : '客 ML';
+            document.getElementById('th-h-ml').textContent = showImpliedOdds ? '主 隱含率' : '主 ML';
+
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td'); if (cells.length < 4) return;
+                const date = cells[0].textContent.trim().replace(/\[|\]/g, '').match(/(\d{1,2}\/\d{1,2}\/\d{4})/)[0];
+                const teamLinks = cells[1].querySelectorAll('a'); if (teamLinks.length < 2) return;
+                const visitor = teamLinks[0].textContent.trim(); const home = teamLinks[1].textContent.trim();
+                const vProbStr = cells[winIndex[sport]].textContent.trim().match(/([\d.]+%)/g)[0];
+                const hProbStr = cells[winIndex[sport]].textContent.trim().match(/([\d.]+%)/g)[1];
+                const mlText = cells[mlIndex[sport]].textContent.trim(); const mlMatches = mlText.match(/([+-]\d+)/g);
+                let vMLStr = '', hMLStr = '';
+                if (mlMatches && mlMatches.length >= 4) { vMLStr = mlMatches[2]; hMLStr = mlMatches[3]; } else if (mlMatches && mlMatches.length >= 2) { vMLStr = mlMatches[0]; hMLStr = mlMatches[1]; }
+                const vProbVal = parseFloat(vProbStr); const hProbVal = parseFloat(hProbStr); const vMLVal = mlToNum(vMLStr); const hMLVal = mlToNum(hMLStr);
+                
+                let strategyRes;
+                if (sport === 'nhl') strategyRes = calculateNhlStrategy(date, visitor, home, vProbVal, hProbVal, vMLVal, hMLVal, bankroll);
+                else if (sport === 'nfl') strategyRes = calculateNflStrategy(date, visitor, home, vProbVal, hProbVal, vMLVal, hMLVal, bankroll);
+                else if (sport === 'ncaaf') strategyRes = calculateNcaafStrategy(date, visitor, home, vProbVal, hProbVal, vMLVal, hMLVal, bankroll);
+                else if (sport === 'nba') strategyRes = calculateNbaStrategy(date, visitor, home, vProbVal, hProbVal, vMLVal, hMLVal, bankroll);
+
+                const tr = document.createElement('tr');
+                if (strategyRes.color === 'buy') tr.className = 'row-buy'; else if (strategyRes.color === 'observe') tr.className = 'row-observe';
+                
+                let badgeClass = strategyRes.color === 'buy' ? 'signal-badge badge-buy' : (strategyRes.color === 'observe' ? 'signal-badge badge-observe' : 'signal-none');
+                
+                let stakeHtml = strategyRes.stake;
+                let modalAttr = "";
+                if (strategyRes.color === 'buy') {
+                    const amtMatch = (typeof strategyRes.stake === 'string') ? strategyRes.stake.match(/\$([\d.]+)/) : null;
+                    const amt = amtMatch ? parseFloat(amtMatch[1]) : 0;
+                    const targetTeam = strategyRes.highlightTarget === 'visitor' ? visitor : home;
+                    const impliedPrice = strategyRes.highlightTarget === 'visitor' ? (vMLVal ? getImpliedProb(vMLVal) : 0.5) : (hMLVal ? getImpliedProb(hMLVal) : 0.5);
+                    modalAttr = `onclick="openBetModal('${targetTeam.replace(/'/g, "\\'")}', ${amt}, ${impliedPrice.toFixed(2)})"`;
+                    stakeHtml = `<span class="badge-buy" ${modalAttr}>${strategyRes.stake}</span>`;
+                }
+
+                const signalHtml = `<span class="${badgeClass}" ${strategyRes.color === 'buy' ? modalAttr : ''}>${strategyRes.signal}</span>`;
+
+                let vColor = '', hColor = '';
+                if (sport === 'nhl') { const bl = ["Kraken", "Devils", "Penguins", "Utah"]; if(bl.some(k=>visitor.includes(k))) vColor='#dc2626'; if(bl.some(k=>home.includes(k))) hColor='#dc2626'; if(home.includes("Canucks")) hColor='#dc2626'; }
+                else if (sport === 'nfl') { const tx = ["Jets", "49ers", "Falcons", "Panthers", "Cardinals", "Commanders", "Chargers"]; if(tx.some(k=>visitor.includes(k))) vColor='#dc2626'; if(tx.some(k=>home.includes(k))) hColor='#dc2626'; }
+                else if (sport === 'nba') { 
+                    const vKey=findNbaKey(visitor,nbaBackendData.team_data); if(vKey&&calculateWeightedROI(nbaBackendData.team_data[vKey]['Away'])<-0.20) vColor='#dc2626';
+                    const hKey=findNbaKey(home,nbaBackendData.team_data); if(hKey&&calculateWeightedROI(nbaBackendData.team_data[hKey]['Home'])<-0.20) hColor='#dc2626';
+                }
+                const vNameDisplay = vColor ? `<span style="color:${vColor};font-weight:900;">${visitor}</span>` : visitor;
+                const hNameDisplay = hColor ? `<span style="color:${hColor};font-weight:900;">${home}</span>` : home;
+
+                let vOddsDisplay = vMLStr || 'N/A'; let hOddsDisplay = hMLStr || 'N/A';
+                if (showImpliedOdds) { if (vMLVal !== null) vOddsDisplay = (getImpliedProb(vMLVal)*100).toFixed(2)+'%'; if (hMLVal !== null) hOddsDisplay = (getImpliedProb(hMLVal)*100).toFixed(2)+'%'; }
+
+                tr.innerHTML = `<td>${date}</td><td>${vNameDisplay}</td><td>${hNameDisplay}</td><td>${vProbStr}</td><td>${hProbStr}</td><td>${vOddsDisplay}</td><td>${hOddsDisplay}</td><td>${signalHtml}</td><td>${stakeHtml}</td>`;
+                tbody.appendChild(tr);
+            });
+            status.textContent = '✅';
+        } catch (err) { 
+            status.textContent = '❌ ' + err.message; console.error(err); 
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        if (typeof nbaBackendData !== 'undefined') document.getElementById('nbaVersionDisplay').textContent = '📅 NBA 數據版本：' + nbaBackendData.last_update_date;
+        loadBettingData(); 
+        fetchData(); 
+        setInterval(fetchData, 3600000); 
+    });
+</script>
+</body>
+</html>
