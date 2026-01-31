@@ -864,12 +864,52 @@
 
         tbody.innerHTML = ''; 
 
-        try {
-            const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-            
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error('Network Error');
-            const html = await response.text();
+                try {
+            // === 自動切換線路邏輯 (Auto-Switch Network) ===
+            const proxyList = [
+                'https://api.allorigins.win/raw?url=',    // 線路 1 (目前最穩)
+                'https://corsproxy.io/?',                 // 線路 2 (備用)
+                'https://api.codetabs.com/v1/proxy?quest=' // 線路 3 (最後手段)
+            ];
+
+            let html = null;
+            let success = false;
+
+            // 迴圈嘗試所有線路
+            for (const proxyBase of proxyList) {
+                try {
+                    // 更新 UI 顯示當前嘗試的線路 (選用)
+                    statusText.style.display = 'block';
+                    const proxyName = new URL(proxyBase).hostname;
+                    statusText.innerHTML = `<span style="color:#64748b; font-size:0.8em;">📡 嘗試連線中: ${proxyName}...</span>`;
+
+                    const targetUrl = proxyBase + encodeURIComponent(url);
+                    
+                    // 設定 10秒 timeout，避免卡在壞掉的線路上太久
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000);
+                    
+                    const response = await fetch(targetUrl, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+
+                    if (response.ok) {
+                        html = await response.text();
+                        // 簡單檢查內容是否有效 (避免代理伺服器回傳 200 但內容是錯誤訊息)
+                        if (html && html.length > 500) { 
+                            success = true;
+                            console.log(`Connected via: ${proxyName}`);
+                            break; // 成功連線，跳出迴圈
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`線路失敗: ${proxyBase}`, e);
+                    // 失敗，繼續嘗試下一個
+                }
+            }
+
+            if (!success || !html) {
+                throw new Error('所有線路皆無法取得數據，請稍後再試');
+            }
             
             // 3. Success: Fill to 100%
             clearInterval(progressInterval);
@@ -879,6 +919,7 @@
             await new Promise(r => setTimeout(r, 200));
 
             const parser = new DOMParser(); 
+
             const doc = parser.parseFromString(html, 'text/html');
             const table = doc.querySelector('table');
             if (!table || table.querySelectorAll('tbody tr').length === 0) throw new Error('無比賽資料');
