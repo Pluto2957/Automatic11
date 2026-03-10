@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>量化交易終端 v12.7 (MLB Data Fix)</title>
+    <title>量化交易終端 v13.0 (MLB Daily Batch)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary-color: #4361ee; --success-bg: #dcfce7; --success-text: #166534; --warning-bg: #fef9c3; --warning-text: #854d0e; --danger-text: #dc2626; --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -133,7 +133,7 @@
     </style>
 </head>
 <body>
-    <h1>🚀 交易模擬器 v12.7 </h1>
+    <h1>🚀 交易模擬器 v13.0 </h1>
     
     <div class="ticker-container">
         <div class="ticker-content">
@@ -154,7 +154,7 @@
                     <option value="ncaaf">🎓 NCAA Football</option>
                 </select>
             </div>
-            <div style="font-size: 0.85em; color: #64748b; background: #f1f5f9; padding: 5px 10px; border-radius: 4px;">📅 MLB Engine: v2.0 (Expanded)</div>
+            <div style="font-size: 0.85em; color: #64748b; background: #f1f5f9; padding: 5px 10px; border-radius: 4px;">📅 MLB Engine: v3.0 (Robust Daily Batch)</div>
         </div>
 
         <div class="bankroll-container">
@@ -422,8 +422,6 @@
         ncaaf: 'https://www.dratings.com/predictor/ncaa-football-predictions/'
     };
     
-    // FIX: MLB table structure is exactly the same as NHL. 
-    // Win% is at index 3, and ML is at index 4.
     const winIndex = { mlb: 3, nhl: 3, nfl: 3, ncaaf: 2 };
     const mlIndex = { mlb: 4, nhl: 4, nfl: 4, ncaaf: 3 };
     
@@ -442,7 +440,6 @@
 
     function mlToNum(mlStr) { if (!mlStr) return null; const cleanStr = mlStr.replace('+', ''); const num = parseInt(cleanStr, 10); return isNaN(num) ? null : num; }
     function getImpliedProb(ml) { if (ml === null) return 0; if (ml > 0) return 100 / (ml + 100); return Math.abs(ml) / (Math.abs(ml) + 100); }
-    function calculateWeightedROI(historyList) { if (!historyList || historyList.length === 0) return 0; let weightedSum = 0; let weightSum = 0; for (let i = 0; i < historyList.length; i++) { const weight = i + 1; weightedSum += historyList[i] * weight; weightSum += weight; } return weightedSum / weightSum; }
     
     // --- Time Parsing Logic ---
     function processMatchTime(rawHTML) {
@@ -490,98 +487,87 @@
         return { utcObj: utcDate, display: displayStr };
     }
 
-    function getPrevDayStr(utcDate) {
-        const prev = new Date(utcDate.getTime() - 86400000);
-        const m = (prev.getUTCMonth() + 1).toString();
-        const d = prev.getUTCDate().toString();
-        const y = prev.getUTCFullYear();
-        return `${m}/${d}/${y}`;
-    }
-
     function polyToAmerican(p) { if(p <= 0.01 || p >= 0.99) return 0; if(p < 0.5) return Math.round((1-p)/p * 100); else return Math.round(- (p/(1-p) * 100)); }
     function polyToDecimal(p) { return p <= 0 ? 0 : (1/p).toFixed(2); }
     function americanToPoly(a) { return a > 0 ? 100/(a+100) : Math.abs(a)/(Math.abs(a)+100); }
     function decimalToPoly(d) { return d <= 0 ? 0 : 1/d; }
 
     // ==========================================
-    //          MLB v2.0 Expanded Strategy
+    //       MLB v3.0 Robust Daily Batch Strategy
     // ==========================================
     function calculateMlbStrategy(utcDate, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
-        if (!utcDate || vML === null || hML === null) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        if (vML === null || hML === null || !utcDate) {
+            return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+        }
         
-        // 1. Time Filters
-        const month = utcDate.getUTCMonth(); // 0-11
-        if (month === 5) return { signal: "Observe (June Filter)", stake: "0%", color: "observe", highlightTarget: null };
-        
-        const day = utcDate.getUTCDay(); // 0=Sun, 5=Fri, 6=Sat
-        const isWeekend = (day === 0 || day === 5 || day === 6);
-        const septMult = (month === 8) ? 0.4 : 1.0; // Conservatism in September
-        const weekendMult = isWeekend ? 0.5 : 1.0; // Halve stakes on weekends
-        const kFrac = 0.21; // v2.0 Optimal Kelly Fraction
-
-        // 2. Probabilities & Edges
-        const vModel = vModelProb / 100.0; 
+        const vModel = vModelProb / 100.0;
         const hModel = hModelProb / 100.0;
-        const vPrice = getImpliedProb(vML); 
-        const hPrice = getImpliedProb(hML);
-        const vEdge = vModel - vPrice; 
-        const hEdge = hModel - hPrice;
+        const vDec = vML > 0 ? (vML / 100) + 1 : (100 / Math.abs(vML)) + 1;
+        const hDec = hML > 0 ? (hML / 100) + 1 : (100 / Math.abs(hML)) + 1;
+        
+        let signalType = null;
+        let targetTeam = "";
+        let ruleName = "";
+        let targetType = ""; // 'Away' or 'Home'
 
-        // 3. Modifiers
-        const blacklist = ['Chicago White Sox', 'Colorado Rockies', 'Los Angeles Angels'];
-        const cashCows = ['Washington Nationals', 'Pittsburgh Pirates', 'Arizona Diamondbacks', 'Baltimore Orioles', 'Seattle Mariners'];
-
-        let rule = null, target = null, type = null, trueProb = 0, cap = 0, ml = 0, edge = 0;
-
-        // --- HIGHER PRIORITY / SPECIFIC RULES ---
-        if (vModel >= 0.55 && vModel <= 0.60 && vEdge >= 0.05) {
-            rule = "🚀 Away Elite Edge"; target = visitor; type = "Away"; trueProb = vModel + 0.12; cap = 0.04; ml = vML; edge = vEdge;
-        } else if (hModel >= 0.35 && hModel <= 0.45 && hEdge >= 0.04) {
-            rule = "🏠 Home Alpha"; target = home; type = "Home"; trueProb = hModel + 0.10; cap = 0.08; ml = hML; edge = hEdge;
-        } else if (hModel >= 0.35 && hModel <= 0.40 && hEdge >= 0.01) {
-            rule = "💎 Home Dark Horse"; target = home; type = "Home"; trueProb = hModel + 0.08; cap = 0.05; ml = hML; edge = hEdge;
-        } else if (vModel >= 0.25 && vModel <= 0.30 && vEdge >= 0.00) {
-            rule = "🏇 Longshot Away"; target = visitor; type = "Away"; trueProb = vModel + 0.06; cap = 0.03; ml = vML; edge = vEdge;
+        // 1. Golden Dog (Takes precedence)
+        if (vModel > 0.40 && vDec >= 2.5 && vDec <= 4.0) {
+            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "🏆 黃金受讓 (Golden Dog)";
         } 
-        // --- STANDARD RULES ---
-        else if (vModel >= 0.35 && vModel <= 0.45 && vEdge >= 0.02) {
-            rule = "🛡️ Away Value"; target = visitor; type = "Away"; trueProb = vModel + 0.04; cap = 0.05; ml = vML; edge = vEdge;
-        } else if (vModel >= 0.55 && vModel <= 0.65 && vEdge >= 0.04) {
-            rule = "⚔️ Road Fav"; target = visitor; type = "Away"; trueProb = vModel + 0.06; cap = 0.04; ml = vML; edge = vEdge;
+        // 2. Matrix Rules
+        else if (vModel >= 0.40 && vModel < 0.45) {
+            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "📊 矩陣: 買客 (40-45%)";
+        } 
+        else if (vModel >= 0.50 && vModel < 0.55) {
+            signalType = 'Home'; targetTeam = home; targetType = 'Home'; ruleName = "📊 矩陣: 買主 (反買客 50-55%)";
+        } 
+        else if (hModel >= 0.00 && hModel < 0.40) {
+            signalType = 'Home'; targetTeam = home; targetType = 'Home'; ruleName = "📊 矩陣: 買主 (0-40%)";
+        } 
+        else if (hModel >= 0.55 && hModel < 0.60) {
+            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "📊 矩陣: 買客 (反買主 55-60%)";
         }
 
-        if (!rule) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
-
-        // Check Blacklist
-        if (blacklist.some(b => target.includes(b))) {
-            return { signal: `${rule} (Blacklist)`, stake: "Observe", color: "observe", highlightTarget: type === 'Home' ? 'home' : 'visitor' };
+        if (!signalType) {
+            return { signal: "-", stake: "-", color: "none", highlightTarget: null };
         }
 
-        // Apply Cash Cow Bonus
-        if (cashCows.some(c => target.includes(c))) cap += 0.01;
-
-        // Calculate Fractional Kelly
-        const odds = ml > 0 ? (ml/100)+1 : (100/Math.abs(ml))+1;
-        const b = odds - 1;
-        const q = 1 - trueProb;
-        const f = (trueProb * b - q) / b;
-
-        const finalF = f * kFrac * septMult * weekendMult;
-        const stakePct = Math.min(Math.max(0, finalF), cap);
-
-        if (stakePct <= 0) {
-            return { signal: `${rule} (Neg EV)`, stake: "Skip", color: "none", highlightTarget: null };
+        // 3. Toxic Filter (Atlanta Braves, Los Angeles Angels)
+        const toxicTeams = ['Atlanta Braves', 'Los Angeles Angels'];
+        if (toxicTeams.some(t => targetTeam.includes(t))) {
+            return { signal: `${ruleName} (毒性過濾)`, stake: "Observe", color: "observe", highlightTarget: targetType === 'Home' ? 'home' : 'visitor' };
         }
 
-        const finalAmt = stakePct * bankroll;
+        // 4. Daily Batch Stepped Proportional Staking Calculation
+        const initialBankroll = 1000.0;
+        let multiple = Math.floor(bankroll / initialBankroll);
+        if (multiple < 1) multiple = 1;
+
+        let baseUnit = 23.0; // Optimized for 45-50% MDD in daily batch
+        let betSize = baseUnit * multiple;
+
+        // 5. Seasonality Filter (Half stake in April and June)
+        // JavaScript Date getUTCMonth is 0-indexed (Jan=0, Apr=3, Jun=5)
+        const month = utcDate.getUTCMonth(); 
+        let seasonalityText = "";
+        if (month === 3 || month === 5) {
+            betSize *= 0.5;
+            seasonalityText = " (季節降載 50%)";
+        }
+
+        const pctOfBankroll = (betSize / bankroll) * 100;
+
         return {
-            signal: (type === 'Home' ? '[主] ' : '[客] ') + rule,
-            stake: `$${finalAmt.toFixed(1)} (${(stakePct * 100).toFixed(2)}%)`,
+            signal: (targetType === 'Home' ? '[主] ' : '[客] ') + ruleName,
+            stake: `$${betSize.toFixed(1)} (${pctOfBankroll.toFixed(2)}%${seasonalityText})`,
             color: "buy",
-            highlightTarget: type === 'Home' ? 'home' : 'visitor'
+            highlightTarget: targetType === 'Home' ? 'home' : 'visitor'
         };
     }
 
+    // ==========================================
+    //       NHL / NFL / NCAAF Strategies
+    // ==========================================
     function calculateNhlStrategy(utcDate, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
         if (!utcDate) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
         if (utcDate.getUTCMonth() === 5) return { signal: "Observe (June)", stake: "0%", color: "observe", highlightTarget: null };
@@ -996,7 +982,7 @@
 
                 let vColor = '', hColor = '';
                 if (sport === 'nhl') { const bl = ["Kraken", "Devils", "Penguins", "Utah"]; if(bl.some(k=>visitor.includes(k))) vColor='#dc2626'; if(bl.some(k=>home.includes(k))) hColor='#dc2626'; if(home.includes("Canucks")) hColor='#dc2626'; }
-                else if (sport === 'mlb') { const bl = ['Chicago White Sox', 'Colorado Rockies', 'Los Angeles Angels']; if(bl.some(k=>visitor.includes(k))) vColor='#dc2626'; if(bl.some(k=>home.includes(k))) hColor='#dc2626'; }
+                else if (sport === 'mlb') { const bl = ['Atlanta Braves', 'Los Angeles Angels']; if(bl.some(k=>visitor.includes(k))) vColor='#dc2626'; if(bl.some(k=>home.includes(k))) hColor='#dc2626'; }
                 else if (sport === 'nfl') { const tx = ["Jets", "49ers", "Falcons", "Panthers", "Cardinals", "Commanders", "Chargers"]; if(tx.some(k=>visitor.includes(k))) vColor='#dc2626'; if(tx.some(k=>home.includes(k))) hColor='#dc2626'; }
                 
                 const vNameDisplay = vColor ? `<span style="color:${vColor};font-weight:900;">${visitor}</span>` : visitor;
