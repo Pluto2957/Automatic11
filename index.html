@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>量化交易終端 v13.1 (Bug Fixes)</title>
+    <title>量化交易終端 v13.3 (Uncapped MLB)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary-color: #4361ee; --success-bg: #dcfce7; --success-text: #166534; --warning-bg: #fef9c3; --warning-text: #854d0e; --danger-text: #dc2626; --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -38,14 +38,12 @@
         @keyframes popIn { 0% { transform: scale(0); opacity: 0; } 80% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* --- Help Modal Styles --- */
+        /* --- UI Elements --- */
         .help-list { list-style: none; padding: 0; margin: 0; }
         .help-list li { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
-        .help-list li:last-child { border-bottom: none; }
         .help-title { font-weight: 800; color: var(--primary-color); display: flex; align-items: center; gap: 8px; font-size: 1.05em; margin-bottom: 5px; }
         .help-desc { color: #475569; font-size: 0.95em; line-height: 1.5; }
 
-        /* --- History Log Table --- */
         .log-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
         .log-table th { background: #f1f5f9; text-align: left; padding: 8px; color: #64748b; font-size: 0.85em; position: sticky; top: 0; }
         .log-table td { border-bottom: 1px solid #e2e8f0; padding: 8px; vertical-align: middle; }
@@ -93,9 +91,7 @@
         th, td { padding: 12px; text-align: center; font-size: 14px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
         th { background-color: #f8fafc; color: #475569; font-weight: 700; }
         
-        /* DATE COLUMN WIDTH FIX */
         table td:first-child, table th:first-child { min-width: 110px; }
-
         tr.row-buy { background-color: var(--success-bg); }
         tr.row-observe { background-color: var(--warning-bg); }
         
@@ -114,7 +110,6 @@
 
         .odds-type-group { display: flex; gap: 0; border-radius: 6px; overflow: hidden; border: 1px solid #cbd5e1; margin-bottom: 10px; }
         .type-btn { flex: 1; padding: 8px; border: none; background: #f1f5f9; color: #64748b; cursor: pointer; font-size: 0.85em; font-weight: bold; border-right: 1px solid #cbd5e1; border-radius: 0; }
-        .type-btn:last-child { border-right: none; }
         .type-btn.active { background: var(--primary-color); color: white; }
 
         .signal-badge { padding: 4px 10px; border-radius: 20px; font-weight: 700; font-size: 0.9em; display: inline-block; }
@@ -130,10 +125,13 @@
         .stats-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
         .stats-table th, .stats-table td { padding: 8px; border-bottom: 1px solid #eee; text-align: center; }
         .stats-table th { background-color: #f8fafc; color: #64748b; }
+
+        /* EV Text Style */
+        .ev-text { font-size: 0.85em; color: #047857; margin-left: 4px; font-weight: 800; }
     </style>
 </head>
 <body>
-    <h1>🚀 交易模擬器 v13.1 (Bug Fixes)</h1>
+    <h1>🚀 交易模擬器 v13.3 (Uncapped MLB)</h1>
     
     <div class="ticker-container">
         <div class="ticker-content">
@@ -207,7 +205,7 @@
             <thead>
                 <tr>
                     <th>日期 (TW)</th><th>客隊</th><th>主隊</th><th>客勝率</th><th>主勝率</th>
-                    <th id="th-v-ml">客 ML</th><th id="th-h-ml">主 ML</th><th>策略建議</th><th>下注</th>
+                    <th id="th-v-ml">客 ML</th><th id="th-h-ml">主 ML</th><th>策略建議 <span style="font-size:0.8em;color:#64748b;">(含 EV%)</span></th><th>下注</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -270,30 +268,16 @@
             <div class="modal-content-scroll">
                 <ul class="help-list">
                     <li>
-                        <div class="help-title">⏰ 時間顯示說明</div>
-                        <div class="help-desc">
-                            列表中的時間為台灣時間 (UTC+8)。<br>
-                            <strong>注意：</strong> 系統已啟用強化時間解析功能，確保能從數據源讀取到準確的 UTC+0 時間並轉換。
-                        </div>
+                        <div class="help-title">⏰ 時間顯示與垃圾回收</div>
+                        <div class="help-desc">系統會自動清理舊於 200 場的歷史快取，避免瀏覽器 localStorage 記憶體溢出當機。時間皆為台灣時間。</div>
                     </li>
                     <li>
-                        <div class="help-title">🎲 如何進行下注？</div>
-                        <div class="help-desc">在「實時訊號」列表中，若出現綠色框的策略建議，點擊該按鈕即可開啟下注視窗。視窗支援 Polymarket (機率)、美式賠率 (+/-) 及歐式賠率 (Decimal) 自動換算。</div>
+                        <div class="help-title">🎲 期望值 (+EV) 顯示</div>
+                        <div class="help-desc">策略建議旁會顯示綠色的 (+EV X%)，代表模型算出的勝率高於莊家隱含勝率的「淨優勢比例」。數值越高，長期獲利空間越大。</div>
                     </li>
                     <li>
-                        <div class="help-title">🏦 資金管理功能</div>
-                        <div class="help-desc">點擊上方的「資金管理 (存/提)」按鈕，可模擬入金或出金。這能修正本金基數，讓「總盈虧 %」的計算更準確，不會因為入金而導致獲利比例被稀釋。</div>
-                    </li>
-                    <li>
-                        <div class="help-title">📊 圖表與數據分析</div>
-                        <div class="help-desc">
-                            • 點擊「戰績」卡片：查看不同賠率區間（如 1.x 倍、2.x 倍）的勝率統計圖。<br>
-                            • 點擊「總盈虧」卡片：開啟資金權益走勢圖 (Equity Curve)。
-                        </div>
-                    </li>
-                    <li>
-                        <div class="help-title">⚡ 異動偵測系統</div>
-                        <div class="help-desc">系統會自動比對盤口變化。若訊號消失或新增，會在該場次旁顯示紫色的「⚡ 異動」標籤。此標籤不會自動消失，必須由您手動點擊標籤以確認已讀。</div>
+                        <div class="help-title">🏦 資金管理與注碼</div>
+                        <div class="help-desc">系統自動執行逐日階梯倍投。<b>請注意：目前已解除 MLB 單注防呆上限</b>，系統將完全依照倍數火力全開，請自行留意高額下注時在市場中的流動性風險。</div>
                     </li>
                 </ul>
             </div>
@@ -497,45 +481,51 @@
     // ==========================================
     function calculateMlbStrategy(utcDate, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
         if (vML === null || hML === null || !utcDate) {
-            return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+            return { signal: "-", stake: "-", color: "none", highlightTarget: null, edge: 0 };
         }
         
         const vModel = vModelProb / 100.0;
         const hModel = hModelProb / 100.0;
+        const vPrice = getImpliedProb(vML); 
+        const hPrice = getImpliedProb(hML);
+        const vEdge = vModel - vPrice; 
+        const hEdge = hModel - hPrice;
+        
         const vDec = vML > 0 ? (vML / 100) + 1 : (100 / Math.abs(vML)) + 1;
         const hDec = hML > 0 ? (hML / 100) + 1 : (100 / Math.abs(hML)) + 1;
         
         let signalType = null;
         let targetTeam = "";
         let ruleName = "";
-        let targetType = ""; // 'Away' or 'Home'
+        let targetType = ""; 
+        let calculatedEdge = 0;
 
-        // 1. Golden Dog (Takes precedence)
+        // 1. Golden Dog
         if (vModel > 0.40 && vDec >= 2.5 && vDec <= 4.0) {
-            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "🏆 黃金受讓 (Golden Dog)";
+            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "🏆 黃金受讓"; calculatedEdge = vEdge;
         } 
         // 2. Matrix Rules
         else if (vModel >= 0.40 && vModel < 0.45) {
-            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "📊 矩陣: 買客 (40-45%)";
+            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "📊 矩陣: 買客"; calculatedEdge = vEdge;
         } 
         else if (vModel >= 0.50 && vModel < 0.55) {
-            signalType = 'Home'; targetTeam = home; targetType = 'Home'; ruleName = "📊 矩陣: 買主 (反買客 50-55%)";
+            signalType = 'Home'; targetTeam = home; targetType = 'Home'; ruleName = "📊 矩陣: 反買主"; calculatedEdge = hEdge;
         } 
         else if (hModel >= 0.00 && hModel < 0.40) {
-            signalType = 'Home'; targetTeam = home; targetType = 'Home'; ruleName = "📊 矩陣: 買主 (0-40%)";
+            signalType = 'Home'; targetTeam = home; targetType = 'Home'; ruleName = "📊 矩陣: 買主"; calculatedEdge = hEdge;
         } 
         else if (hModel >= 0.55 && hModel < 0.60) {
-            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "📊 矩陣: 買客 (反買主 55-60%)";
+            signalType = 'Away'; targetTeam = visitor; targetType = 'Away'; ruleName = "📊 矩陣: 反買客"; calculatedEdge = vEdge;
         }
 
         if (!signalType) {
-            return { signal: "-", stake: "-", color: "none", highlightTarget: null };
+            return { signal: "-", stake: "-", color: "none", highlightTarget: null, edge: 0 };
         }
 
-        // 3. Toxic Filter (Atlanta Braves, Los Angeles Angels)
+        // 3. Toxic Filter
         const toxicTeams = ['Atlanta Braves', 'Los Angeles Angels'];
         if (toxicTeams.some(t => targetTeam.includes(t))) {
-            return { signal: `${ruleName} (毒性過濾)`, stake: "Observe", color: "observe", highlightTarget: targetType === 'Home' ? 'home' : 'visitor' };
+            return { signal: `${ruleName} (毒性過濾)`, stake: "Observe", color: "observe", highlightTarget: targetType === 'Home' ? 'home' : 'visitor', edge: calculatedEdge };
         }
 
         // 4. Daily Batch Stepped Proportional Staking Calculation
@@ -543,24 +533,25 @@
         let multiple = Math.floor(bankroll / initialBankroll);
         if (multiple < 1) multiple = 1;
 
-        let baseUnit = 23.0; // Optimized for 45-50% MDD in daily batch
+        let baseUnit = 23.0; 
         let betSize = baseUnit * multiple;
 
-        // 5. Seasonality Filter (Half stake in April and June)
+        // 5. Seasonality Filter
         const month = utcDate.getUTCMonth(); 
         let seasonalityText = "";
         if (month === 3 || month === 5) {
             betSize *= 0.5;
-            seasonalityText = " (季節降載 50%)";
+            seasonalityText = " (季降載)";
         }
 
         const pctOfBankroll = (betSize / bankroll) * 100;
 
         return {
             signal: (targetType === 'Home' ? '[主] ' : '[客] ') + ruleName,
-            stake: `$${betSize.toFixed(1)} (${pctOfBankroll.toFixed(2)}%${seasonalityText})`,
+            stake: `$${betSize.toFixed(1)} (${pctOfBankroll.toFixed(1)}%${seasonalityText})`,
             color: "buy",
-            highlightTarget: targetType === 'Home' ? 'home' : 'visitor'
+            highlightTarget: targetType === 'Home' ? 'home' : 'visitor',
+            edge: calculatedEdge
         };
     }
 
@@ -574,16 +565,16 @@
         if (vML === null || hML === null) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
         const vPrice = getImpliedProb(vML); const hPrice = getImpliedProb(hML);
         const vEdge = vModel - vPrice; const hEdge = hModel - hPrice;
-        let result = { type: null, ruleName: null, target: null, trueProb: 0, cap: 0, price: 0 };
-        if (hModel >= 0.60 && hModel <= 0.65 && hEdge >= 0.02) result = { type: 'Home', ruleName: '🚀 Home Ultra', target: home, trueProb: hModel + 0.08, cap: 0.08, price: hPrice };
-        else if (hModel >= 0.46 && hModel <= 0.48 && hEdge >= 0.03) result = { type: 'Home', ruleName: '💎 Home Hidden Gem', target: home, trueProb: hModel + 0.12, cap: 0.06, price: hPrice };
-        else if (hModel >= 0.25 && hModel <= 0.30 && hEdge >= -0.02) result = { type: 'Home', ruleName: '💰 Home Underdog', target: home, trueProb: hModel + 0.15, cap: 0.05, price: hPrice };
-        else if (hModel >= 0.45 && hModel <= 0.475 && hEdge < 0) result = { type: 'Home', ruleName: '📉 Home Market Wisdom', target: home, trueProb: hPrice + 0.05, cap: 0.04, price: hPrice };
-        else if (hModel >= 0.525 && hModel <= 0.55 && hEdge >= 0.02) result = { type: 'Home', ruleName: '✅ Home Mid-Value', target: home, trueProb: hModel + 0.025, cap: 0.03, price: hPrice };
-        else if (vModel >= 0.42 && vModel <= 0.44 && vEdge >= 0.05) result = { type: 'Away', ruleName: '🚀 Away Super Edge', target: visitor, trueProb: vModel + 0.15, cap: 0.06, price: vPrice };
-        else if (vModel >= 0.40 && vModel <= 0.45 && vEdge >= 0) result = { type: 'Away', ruleName: '🛡️ Away Stable', target: visitor, trueProb: vModel + 0.04, cap: 0.04, price: vPrice };
-        else if (vModel >= 0.25 && vModel <= 0.35 && vEdge < 0) result = { type: 'Away', ruleName: '📉 Away Wisdom', target: visitor, trueProb: vPrice + 0.08, cap: 0.04, price: vPrice };
-        else if (vModel >= 0.60 && vModel <= 0.65 && vEdge >= 0) result = { type: 'Away', ruleName: '⚔️ Away Favorite', target: visitor, trueProb: vModel + 0.05, cap: 0.04, price: vPrice };
+        let result = { type: null, ruleName: null, target: null, trueProb: 0, cap: 0, price: 0, edge: 0 };
+        if (hModel >= 0.60 && hModel <= 0.65 && hEdge >= 0.02) result = { type: 'Home', ruleName: '🚀 Home Ultra', target: home, trueProb: hModel + 0.08, cap: 0.08, price: hPrice, edge: hEdge };
+        else if (hModel >= 0.46 && hModel <= 0.48 && hEdge >= 0.03) result = { type: 'Home', ruleName: '💎 Home Hidden Gem', target: home, trueProb: hModel + 0.12, cap: 0.06, price: hPrice, edge: hEdge };
+        else if (hModel >= 0.25 && hModel <= 0.30 && hEdge >= -0.02) result = { type: 'Home', ruleName: '💰 Home Underdog', target: home, trueProb: hModel + 0.15, cap: 0.05, price: hPrice, edge: hEdge };
+        else if (hModel >= 0.45 && hModel <= 0.475 && hEdge < 0) result = { type: 'Home', ruleName: '📉 Home Market Wisdom', target: home, trueProb: hPrice + 0.05, cap: 0.04, price: hPrice, edge: hEdge };
+        else if (hModel >= 0.525 && hModel <= 0.55 && hEdge >= 0.02) result = { type: 'Home', ruleName: '✅ Home Mid-Value', target: home, trueProb: hModel + 0.025, cap: 0.03, price: hPrice, edge: hEdge };
+        else if (vModel >= 0.42 && vModel <= 0.44 && vEdge >= 0.05) result = { type: 'Away', ruleName: '🚀 Away Super Edge', target: visitor, trueProb: vModel + 0.15, cap: 0.06, price: vPrice, edge: vEdge };
+        else if (vModel >= 0.40 && vModel <= 0.45 && vEdge >= 0) result = { type: 'Away', ruleName: '🛡️ Away Stable', target: visitor, trueProb: vModel + 0.04, cap: 0.04, price: vPrice, edge: vEdge };
+        else if (vModel >= 0.25 && vModel <= 0.35 && vEdge < 0) result = { type: 'Away', ruleName: '📉 Away Wisdom', target: visitor, trueProb: vPrice + 0.08, cap: 0.04, price: vPrice, edge: vEdge };
+        else if (vModel >= 0.60 && vModel <= 0.65 && vEdge >= 0) result = { type: 'Away', ruleName: '⚔️ Away Favorite', target: visitor, trueProb: vModel + 0.05, cap: 0.04, price: vPrice, edge: vEdge };
         else return { signal: "-", stake: "-", color: "none", highlightTarget: null };
         const blacklistKeywords = ["Kraken", "Devils", "Penguins", "Utah"];
         if (blacklistKeywords.some(kw => result.target.includes(kw))) return { signal: `${result.ruleName} (Blacklist)`, stake: "Observe", color: "observe", highlightTarget: result.type === 'Home' ? 'home' : 'visitor' };
@@ -591,28 +582,29 @@
         let kellyStake = 0; if (result.price < 1) kellyStake = ((result.trueProb - result.price) / (1.0 - result.price)) * 0.5;
         if (kellyStake <= 0) return { signal: `${result.ruleName} (Neg EV)`, stake: "Skip", color: "none", highlightTarget: null };
         let finalStakePct = Math.min(kellyStake, result.cap); let finalAmt = finalStakePct * bankroll;
-        return { signal: (result.type==='Home'?'[主] ':'[客] ') + result.ruleName, stake: `$${finalAmt.toFixed(1)} (${(finalStakePct * 100).toFixed(2)}%)`, color: "buy", highlightTarget: result.type === 'Home' ? 'home' : 'visitor' };
+        return { signal: (result.type==='Home'?'[主] ':'[客] ') + result.ruleName, stake: `$${finalAmt.toFixed(1)} (${(finalStakePct * 100).toFixed(2)}%)`, color: "buy", highlightTarget: result.type === 'Home' ? 'home' : 'visitor', edge: result.edge };
     }
 
     function calculateNflStrategy(utcDate, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
         const vModel = vModelProb / 100.0; const hModel = hModelProb / 100.0;
         if (vML === null || hML === null) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
         const vPrice = getImpliedProb(vML); const hPrice = getImpliedProb(hML);
+        const vEdge = vModel - vPrice; const hEdge = hModel - hPrice;
         const vDec = vML > 0 ? (vML / 100) + 1 : (100 / Math.abs(vML)) + 1;
         const isJanuary = (utcDate && utcDate.getUTCMonth() === 0);
-        let action = { type: null, target: null, cap: 0, reason: "" };
-        if (vModel >= 0.50 && vModel < 0.55) action = { type: 'Follow', target: visitor, cap: 0.088, reason: "Guest 50-55% (Follow)" };
-        else if (vModel >= 0.55 && vModel < 0.60) action = { type: 'Bet', target: home, cap: 0.05, reason: "Guest 55-60% (Fade)" };
+        let action = { type: null, target: null, cap: 0, reason: "", edge: 0 };
+        if (vModel >= 0.50 && vModel < 0.55) action = { type: 'Follow', target: visitor, cap: 0.088, reason: "Guest 50-55% (Follow)", edge: vEdge };
+        else if (vModel >= 0.55 && vModel < 0.60) action = { type: 'Bet', target: home, cap: 0.05, reason: "Guest 55-60% (Fade)", edge: hEdge };
         else if (vModel >= 0.60 && vModel < 0.65) action = { type: 'Pass', target: null, cap: 0, reason: "Guest 60-65% (Pass)" };
-        else if (vModel >= 0.65 && vModel < 0.75) action = { type: 'Follow', target: visitor, cap: 0.088, reason: "Guest 65-75% (Follow)" };
-        else if (vModel >= 0.75 && vModel < 0.80) action = { type: 'Bet', target: home, cap: 0.10, reason: "Guest 75-80% (Fade)" };
-        else if (hModel >= 0.50 && hModel < 0.65) action = { type: 'Bet', target: visitor, cap: 0.08, reason: "Home 50-65% (Gold Zone)" };
-        else if (hModel >= 0.65 && hModel < 0.75) action = { type: 'Follow', target: home, cap: 0.053, reason: "Home 65-75% (Follow)" };
-        else if (hModel >= 0.75 && hModel < 0.80) action = { type: 'Bet', target: visitor, cap: 0.04, reason: "Home 75-80% (Fade)" };
+        else if (vModel >= 0.65 && vModel < 0.75) action = { type: 'Follow', target: visitor, cap: 0.088, reason: "Guest 65-75% (Follow)", edge: vEdge };
+        else if (vModel >= 0.75 && vModel < 0.80) action = { type: 'Bet', target: home, cap: 0.10, reason: "Guest 75-80% (Fade)", edge: hEdge };
+        else if (hModel >= 0.50 && hModel < 0.65) action = { type: 'Bet', target: visitor, cap: 0.08, reason: "Home 50-65% (Gold Zone)", edge: vEdge };
+        else if (hModel >= 0.65 && hModel < 0.75) action = { type: 'Follow', target: home, cap: 0.053, reason: "Home 65-75% (Follow)", edge: hEdge };
+        else if (hModel >= 0.75 && hModel < 0.80) action = { type: 'Bet', target: visitor, cap: 0.04, reason: "Home 75-80% (Fade)", edge: vEdge };
         else if (hModel >= 0.80 && hModel < 0.90) action = { type: 'Pass', target: null, cap: 0, reason: "Home 80-90% (Trap)" };
-        else if (hModel >= 0.90) action = { type: 'Follow', target: home, cap: 0.053, reason: "Home 90%+ (Follow)" };
+        else if (hModel >= 0.90) action = { type: 'Follow', target: home, cap: 0.053, reason: "Home 90%+ (Follow)", edge: hEdge };
         const goldenBlacklistKW = ["Jaguars", "Jets", "Broncos"]; let isGoldenDog = false;
-        if (vDec >= 2.5 && vDec <= 4.0 && !goldenBlacklistKW.some(kw => visitor.includes(kw))) { isGoldenDog = true; action = { type: 'Golden', target: visitor, cap: 0.08, reason: "🏆 Golden Road Dog" }; if (visitor.includes("Steelers") || visitor.includes("Cardinals")) { action.cap = 0.12; action.reason += " (Boost)"; } }
+        if (vDec >= 2.5 && vDec <= 4.0 && !goldenBlacklistKW.some(kw => visitor.includes(kw))) { isGoldenDog = true; action = { type: 'Golden', target: visitor, cap: 0.08, reason: "🏆 Golden Road Dog", edge: vEdge }; if (visitor.includes("Steelers") || visitor.includes("Cardinals")) { action.cap = 0.12; action.reason += " (Boost)"; } }
         const toxicKW = ["Jets", "49ers", "Falcons", "Panthers", "Cardinals", "Commanders", "Chargers"];
         if (action.target && toxicKW.some(kw => action.target.includes(kw))) { return { signal: `Toxic Filter (Avoid ${action.target})`, stake: "Observe", color: "observe", highlightTarget: action.target === home ? 'home' : 'visitor' }; }
         if (!action.target || action.type === 'Pass') return { signal: action.reason || "No Signal", stake: "-", color: "none", highlightTarget: null };
@@ -622,7 +614,7 @@
         let rawStake = ((p - q) / (1 - q)) * 1.35; if (isJanuary) rawStake = rawStake * 0.5;
         let finalStakePct = Math.min(rawStake, action.cap); if (finalStakePct <= 0) return { signal: `${action.reason} (Low Edge)`, stake: "Skip", color: "none", highlightTarget: null };
         let finalAmt = finalStakePct * bankroll;
-        return { signal: (action.target===home?'[主] ':'[客] ') + action.reason, stake: `$${finalAmt.toFixed(1)} (${(finalStakePct * 100).toFixed(2)}%${isJanuary?" Jan":""})`, color: "buy", highlightTarget: action.target===home ? 'home' : 'visitor' };
+        return { signal: (action.target===home?'[主] ':'[客] ') + action.reason, stake: `$${finalAmt.toFixed(1)} (${(finalStakePct * 100).toFixed(2)}%${isJanuary?" Jan":""})`, color: "buy", highlightTarget: action.target===home ? 'home' : 'visitor', edge: action.edge };
     }
 
     function calculateNcaafStrategy(utcDate, visitor, home, vModelProb, hModelProb, vML, hML, bankroll) {
@@ -633,24 +625,24 @@
         const month = utcDate.getUTCMonth(); 
         const day = utcDate.getUTCDay(); 
         const isWeekend = (day === 0 || day === 6);
-        let action = { name: null, target: null, type: null, p: 0, c: 0 }; let isTrap = false;
-        if (vEdge > 0.15) { if (month !== 8 && month !== 11) { if ((hML < -200 || hML > 100) && hPrice < 0.60) { action = { name: "🪤 Fade_Trap", target: home, type: 'Home', p: 0.60, c: hPrice }; isTrap = true; } } }
+        let action = { name: null, target: null, type: null, p: 0, c: 0, edge: 0 }; let isTrap = false;
+        if (vEdge > 0.15) { if (month !== 8 && month !== 11) { if ((hML < -200 || hML > 100) && hPrice < 0.60) { action = { name: "🪤 Fade_Trap", target: home, type: 'Home', p: 0.60, c: hPrice, edge: hEdge }; isTrap = true; } } }
         if ((vEdge > 0.15 || hEdge > 0.15) && !isTrap) return { signal: "High Edge Skip", stake: "-", color: "none", highlightTarget: null };
         const allowedDays = [0, 2, 6];
         if (!action.name && allowedDays.includes(day)) {
-            if (hML > 0 && hEdge > 0 && (month === 9 || month === 11) && isWeekend) action = { name: "🎯 Home_Sniper", target: home, type: 'Home', p: hModel, c: hPrice };
-            else if (hModel >= 0.75 && hModel <= 0.85 && hEdge >= 0.01 && month !== 7) action = { name: "🏰 Home_Core", target: home, type: 'Home', p: hModel, c: hPrice };
-            else if (vModel >= 0.55 && vModel <= 0.60 && vEdge >= 0.02 && vML <= 100 && month !== 8) action = { name: "🚌 Road_Value", target: visitor, type: 'Away', p: vModel, c: vPrice };
-            else if (hModel >= 0.90 && hEdge >= 0.01) action = { name: "⚓ Safe_Anchor", target: home, type: 'Home', p: hModel, c: hPrice };
-            else if (hModel >= 0.50 && hModel <= 0.55 && hEdge >= 0.02 && hML <= 100 && month !== 10) action = { name: "🏠 Home_Value", target: home, type: 'Home', p: hModel, c: hPrice };
-            else if (day === 0 && hModel >= 0.5 && hModel <= 0.8 && hEdge > 0) action = { name: "☀️ Sun_Home_Mid", target: home, type: 'Home', p: hModel, c: hPrice };
-            else if (day === 0 && vModel >= 0.6 && vModel <= 0.7 && vEdge > 0) action = { name: "☀️ Sun_Away_Gap", target: visitor, type: 'Away', p: vModel, c: vPrice };
-            else if ((month === 0 || month === 7) && vModel > 0.6 && vEdge > 0) action = { name: "🗓️ Away_Jan_Aug", target: visitor, type: 'Away', p: vModel, c: vPrice };
+            if (hML > 0 && hEdge > 0 && (month === 9 || month === 11) && isWeekend) action = { name: "🎯 Home_Sniper", target: home, type: 'Home', p: hModel, c: hPrice, edge: hEdge };
+            else if (hModel >= 0.75 && hModel <= 0.85 && hEdge >= 0.01 && month !== 7) action = { name: "🏰 Home_Core", target: home, type: 'Home', p: hModel, c: hPrice, edge: hEdge };
+            else if (vModel >= 0.55 && vModel <= 0.60 && vEdge >= 0.02 && vML <= 100 && month !== 8) action = { name: "🚌 Road_Value", target: visitor, type: 'Away', p: vModel, c: vPrice, edge: vEdge };
+            else if (hModel >= 0.90 && hEdge >= 0.01) action = { name: "⚓ Safe_Anchor", target: home, type: 'Home', p: hModel, c: hPrice, edge: hEdge };
+            else if (hModel >= 0.50 && hModel <= 0.55 && hEdge >= 0.02 && hML <= 100 && month !== 10) action = { name: "🏠 Home_Value", target: home, type: 'Home', p: hModel, c: hPrice, edge: hEdge };
+            else if (day === 0 && hModel >= 0.5 && hModel <= 0.8 && hEdge > 0) action = { name: "☀️ Sun_Home_Mid", target: home, type: 'Home', p: hModel, c: hPrice, edge: hEdge };
+            else if (day === 0 && vModel >= 0.6 && vModel <= 0.7 && vEdge > 0) action = { name: "☀️ Sun_Away_Gap", target: visitor, type: 'Away', p: vModel, c: vPrice, edge: vEdge };
+            else if ((month === 0 || month === 7) && vModel > 0.6 && vEdge > 0) action = { name: "🗓️ Away_Jan_Aug", target: visitor, type: 'Away', p: vModel, c: vPrice, edge: vEdge };
         }
         if (!action.name) return { signal: "-", stake: "-", color: "none", highlightTarget: null };
         if (action.p <= action.c) return { signal: `${action.name} (Neg EV)`, stake: "Skip", color: "none", highlightTarget: null };
         let rawKelly = (action.p - action.c) / (1 - action.c); let wagerPct = Math.max(0, rawKelly) * 0.41; let finalAmt = wagerPct * bankroll;
-        return { signal: (action.type==='Home'?'[主] ':'[客] ') + action.name, stake: `$${finalAmt.toFixed(1)} (${(wagerPct * 100).toFixed(2)}%)`, color: "buy", highlightTarget: action.type === 'Home' ? 'home' : 'visitor' };
+        return { signal: (action.type==='Home'?'[主] ':'[客] ') + action.name, stake: `$${finalAmt.toFixed(1)} (${(wagerPct * 100).toFixed(2)}%)`, color: "buy", highlightTarget: action.type === 'Home' ? 'home' : 'visitor', edge: action.edge };
     }
 
     let showImpliedOdds = false;
@@ -681,7 +673,22 @@
         updateUI();
     }
 
+    function runGarbageCollection() {
+        const MAX_SAVED = 200; 
+        for (const sportKey in bettingData.savedSignals) {
+            const keys = Object.keys(bettingData.savedSignals[sportKey]);
+            if (keys.length > MAX_SAVED) {
+                const keysToRemove = keys.slice(0, keys.length - MAX_SAVED);
+                keysToRemove.forEach(k => {
+                    delete bettingData.savedSignals[sportKey][k];
+                    delete bettingData.activeAlerts[k];
+                });
+            }
+        }
+    }
+
     function saveBettingData() {
+        runGarbageCollection();
         localStorage.setItem('pms_betting_data_v4', JSON.stringify(bettingData));
         updateUI();
     }
@@ -762,14 +769,11 @@
         if(confirm('確定要清除所有異動歷史紀錄嗎？')) { bettingData.changeLog = []; saveBettingData(); openHistoryModal(); }
     }
 
-    // BUG FIX 2: Removed fetchData() from here to prevent reloading the entire table and API call.
     function clearAlert(matchKey, btnElement) {
         if (bettingData.activeAlerts[matchKey]) {
             delete bettingData.activeAlerts[matchKey];
             saveBettingData();
-            if (btnElement) {
-                btnElement.remove(); // 直接從畫面上移除該標籤，達成零延遲互動
-            }
+            if (btnElement) btnElement.remove();
         }
     }
 
@@ -923,7 +927,6 @@
             let changesCount = 0;
             let currentSignalState = {};
 
-            // BUG FIX 1: 跨球種記憶隔離 (Namespace by sport)
             if (!bettingData.savedSignals[sport]) {
                 bettingData.savedSignals[sport] = {};
             }
@@ -983,7 +986,12 @@
                     stakeHtml = `<span class="badge-buy" ${modalAttr}>${strategyRes.stake}</span>`;
                 }
 
-                let signalDisplay = `<span class="${badgeClass}" ${strategyRes.color === 'buy' ? modalAttr : ''}>${strategyRes.signal}</span>`;
+                let edgeDisplay = "";
+                if (strategyRes.edge && strategyRes.edge > 0 && strategyRes.color === 'buy') {
+                    edgeDisplay = `<span class="ev-text">(+EV ${(strategyRes.edge * 100).toFixed(1)}%)</span>`;
+                }
+
+                let signalDisplay = `<span class="${badgeClass}" ${strategyRes.color === 'buy' ? modalAttr : ''}>${strategyRes.signal}</span>${edgeDisplay}`;
                 if (bettingData.activeAlerts[matchKey]) {
                     signalDisplay += ` <span class="change-badge" onclick="clearAlert('${matchKey}', this)">⚡ 異動</span>`;
                 }
@@ -1006,7 +1014,6 @@
                 showToast(`偵測到 ${changesCount} 場比賽訊號發生異動！`);
             }
             
-            // 寫入專屬當前球種的訊號記憶
             bettingData.savedSignals[sport] = currentSignalState;
             saveBettingData(); 
 
