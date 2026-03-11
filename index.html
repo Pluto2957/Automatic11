@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>量化交易終端 v13.0 (MLB Daily Batch)</title>
+    <title>量化交易終端 v13.1 (Bug Fixes)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary-color: #4361ee; --success-bg: #dcfce7; --success-text: #166534; --warning-bg: #fef9c3; --warning-text: #854d0e; --danger-text: #dc2626; --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -133,7 +133,7 @@
     </style>
 </head>
 <body>
-    <h1>🚀 交易模擬器 v13.0 </h1>
+    <h1>🚀 交易模擬器 v13.1 (Bug Fixes)</h1>
     
     <div class="ticker-container">
         <div class="ticker-content">
@@ -547,7 +547,6 @@
         let betSize = baseUnit * multiple;
 
         // 5. Seasonality Filter (Half stake in April and June)
-        // JavaScript Date getUTCMonth is 0-indexed (Jan=0, Apr=3, Jun=5)
         const month = utcDate.getUTCMonth(); 
         let seasonalityText = "";
         if (month === 3 || month === 5) {
@@ -763,11 +762,14 @@
         if(confirm('確定要清除所有異動歷史紀錄嗎？')) { bettingData.changeLog = []; saveBettingData(); openHistoryModal(); }
     }
 
-    function clearAlert(matchKey) {
+    // BUG FIX 2: Removed fetchData() from here to prevent reloading the entire table and API call.
+    function clearAlert(matchKey, btnElement) {
         if (bettingData.activeAlerts[matchKey]) {
             delete bettingData.activeAlerts[matchKey];
             saveBettingData();
-            fetchData(); 
+            if (btnElement) {
+                btnElement.remove(); // 直接從畫面上移除該標籤，達成零延遲互動
+            }
         }
     }
 
@@ -921,6 +923,12 @@
             let changesCount = 0;
             let currentSignalState = {};
 
+            // BUG FIX 1: 跨球種記憶隔離 (Namespace by sport)
+            if (!bettingData.savedSignals[sport]) {
+                bettingData.savedSignals[sport] = {};
+            }
+            const oldSignals = bettingData.savedSignals[sport];
+
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td'); if (cells.length < 4) return;
                 
@@ -948,9 +956,9 @@
                 const currentSig = strategyRes.signal;
                 currentSignalState[matchKey] = currentSig;
 
-                if (bettingData.savedSignals[matchKey] && bettingData.savedSignals[matchKey] !== currentSig) {
+                if (oldSignals[matchKey] && oldSignals[matchKey] !== currentSig) {
                     let type = "訊號變更";
-                    if(bettingData.savedSignals[matchKey] === '-' || bettingData.savedSignals[matchKey] === 'No Value') type = "新增訊號";
+                    if(oldSignals[matchKey] === '-' || oldSignals[matchKey] === 'No Value') type = "新增訊號";
                     else if(currentSig === '-' || currentSig === 'No Value') type = "訊號消失";
                     
                     bettingData.changeLog.push({ timestamp: Date.now(), match: `${visitor} vs ${home}`, type: type });
@@ -977,7 +985,7 @@
 
                 let signalDisplay = `<span class="${badgeClass}" ${strategyRes.color === 'buy' ? modalAttr : ''}>${strategyRes.signal}</span>`;
                 if (bettingData.activeAlerts[matchKey]) {
-                    signalDisplay += ` <span class="change-badge" onclick="clearAlert('${matchKey}')">⚡ 異動</span>`;
+                    signalDisplay += ` <span class="change-badge" onclick="clearAlert('${matchKey}', this)">⚡ 異動</span>`;
                 }
 
                 let vColor = '', hColor = '';
@@ -994,11 +1002,12 @@
                 tbody.appendChild(tr);
             });
 
-            if (Object.keys(bettingData.savedSignals).length > 0 && changesCount > 0) {
+            if (Object.keys(oldSignals).length > 0 && changesCount > 0) {
                 showToast(`偵測到 ${changesCount} 場比賽訊號發生異動！`);
-                saveBettingData(); 
             }
-            bettingData.savedSignals = currentSignalState;
+            
+            // 寫入專屬當前球種的訊號記憶
+            bettingData.savedSignals[sport] = currentSignalState;
             saveBettingData(); 
 
             setTimeout(() => {
