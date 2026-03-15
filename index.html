@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>量化交易終端 v13.3 (Uncapped MLB)</title>
+    <title>量化交易終端 v13.4 (Uncapped MLB + P&L Chart)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root { --primary-color: #4361ee; --success-bg: #dcfce7; --success-text: #166534; --warning-bg: #fef9c3; --warning-text: #854d0e; --danger-text: #dc2626; --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
@@ -100,7 +100,7 @@
         .btn-import { background-color: #475569; color: white; }
         
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 450px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); box-sizing: border-box; display: flex; flex-direction: column; max-height: 90vh; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); box-sizing: border-box; display: flex; flex-direction: column; max-height: 90vh; }
         .modal-content-scroll { overflow-y: auto; flex: 1; }
         .modal-row { margin-bottom: 15px; }
         .modal-row label { display: block; margin-bottom: 5px; font-weight: bold; }
@@ -131,7 +131,7 @@
     </style>
 </head>
 <body>
-    <h1>🚀 交易模擬器 v13.3 (Uncapped MLB)</h1>
+    <h1>🚀 交易模擬器 v13.4 (Uncapped MLB)</h1>
     
     <div class="ticker-container">
         <div class="ticker-content">
@@ -162,7 +162,7 @@
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card clickable" onclick="openStatsModal()" title="點擊查看詳細勝率分析">
+            <div class="stat-card clickable" onclick="openStatsModal()" title="點擊查看詳細勝率與盈虧分析">
                 <div class="stat-label">戰績 (Win Record) 📊</div>
                 <div class="stat-value" id="statWinRecord">0-0</div>
                 <div class="stat-sub" id="statWinRatePct" style="color: #64748b;">(0.0%)</div>
@@ -287,7 +287,7 @@
     <div id="statsModal" class="modal-overlay">
         <div class="modal-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h3 style="margin:0;">📊 賠率勝率分析</h3>
+                <h3 style="margin:0;">📊 賠率勝率與盈虧分析</h3>
                 <button onclick="closeModal('statsModal')" class="secondary" style="padding: 5px 10px;">✕</button>
             </div>
             <div class="modal-content-scroll">
@@ -296,7 +296,12 @@
                 </div>
                 <table class="stats-table">
                     <thead>
-                        <tr><th>賠率區間 (Decimal)</th><th>勝/負</th><th>勝率 %</th></tr>
+                        <tr>
+                            <th>賠率區間 (Decimal)</th>
+                            <th>勝/負</th>
+                            <th>勝率 %</th>
+                            <th>總盈虧 (P&L)</th>
+                        </tr>
                     </thead>
                     <tbody id="statsTableBody"></tbody>
                 </table>
@@ -411,6 +416,7 @@
     
     let currentSport = 'mlb', history = {}, myChart = null, statsChart = null;
     let oddsMode = localStorage.getItem('pms_odds_mode') || 'polymarket'; 
+    let currentFetchId = 0; // 新增這行：用來追蹤最新的請求 ID 防禦資料錯置
 
     function showToast(message) {
         const container = document.getElementById('toast-container');
@@ -734,15 +740,131 @@
     function openStatsModal() {
         const historyList = bettingData.closedBets.filter(b => b.sport === currentSport && b.result !== 'adjustment');
         if (historyList.length === 0) { alert('尚無足夠數據進行分析'); return; }
-        const buckets = { '1.0-1.99': { wins: 0, total: 0 }, '2.0-2.99': { wins: 0, total: 0 }, '3.0-3.99': { wins: 0, total: 0 }, '4.0+': { wins: 0, total: 0 } };
+        
+        const buckets = { 
+            '1.0-1.99': { wins: 0, total: 0, pnl: 0 }, 
+            '2.0-2.99': { wins: 0, total: 0, pnl: 0 }, 
+            '3.0-3.99': { wins: 0, total: 0, pnl: 0 }, 
+            '4.0+': { wins: 0, total: 0, pnl: 0 } 
+        };
+        
         historyList.forEach(b => {
-            const p = b.price; if (p > 0.5) { buckets['1.0-1.99'].total++; if(b.profit > 0) buckets['1.0-1.99'].wins++; } else if (p > 0.3333) { buckets['2.0-2.99'].total++; if(b.profit > 0) buckets['2.0-2.99'].wins++; } else if (p > 0.25) { buckets['3.0-3.99'].total++; if(b.profit > 0) buckets['3.0-3.99'].wins++; } else { buckets['4.0+'].total++; if(b.profit > 0) buckets['4.0+'].wins++; }
+            const p = b.price; 
+            if (p > 0.5) { 
+                buckets['1.0-1.99'].total++; 
+                buckets['1.0-1.99'].pnl += b.profit;
+                if(b.profit > 0) buckets['1.0-1.99'].wins++; 
+            } else if (p > 0.3333) { 
+                buckets['2.0-2.99'].total++; 
+                buckets['2.0-2.99'].pnl += b.profit;
+                if(b.profit > 0) buckets['2.0-2.99'].wins++; 
+            } else if (p > 0.25) { 
+                buckets['3.0-3.99'].total++; 
+                buckets['3.0-3.99'].pnl += b.profit;
+                if(b.profit > 0) buckets['3.0-3.99'].wins++; 
+            } else { 
+                buckets['4.0+'].total++; 
+                buckets['4.0+'].pnl += b.profit;
+                if(b.profit > 0) buckets['4.0+'].wins++; 
+            }
         });
-        const ctx = document.getElementById('winRateChart').getContext('2d'); if (statsChart) statsChart.destroy();
-        const labels = Object.keys(buckets); const winRates = labels.map(k => buckets[k].total > 0 ? (buckets[k].wins / buckets[k].total * 100) : 0); const counts = labels.map(k => buckets[k].total);
-        statsChart = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: '勝率 (%)', data: winRates, backgroundColor: 'rgba(67, 97, 238, 0.6)', borderColor: 'rgba(67, 97, 238, 1)', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100 } }, plugins: { tooltip: { callbacks: { label: function(context) { const idx = context.dataIndex; return `勝率: ${context.parsed.y.toFixed(1)}% (${buckets[labels[idx]].wins}/${counts[idx]})`; } } } } } });
+
+        const ctx = document.getElementById('winRateChart').getContext('2d'); 
+        if (statsChart) statsChart.destroy();
+        
+        const labels = Object.keys(buckets); 
+        const winRates = labels.map(k => buckets[k].total > 0 ? (buckets[k].wins / buckets[k].total * 100) : 0); 
+        const counts = labels.map(k => buckets[k].total);
+        const pnls = labels.map(k => buckets[k].pnl);
+        
+        // 設定直條圖顏色：正數綠色，負數紅色
+        const pnlColors = pnls.map(val => val >= 0 ? 'rgba(22, 163, 74, 0.7)' : 'rgba(220, 38, 38, 0.7)');
+        const pnlBorders = pnls.map(val => val >= 0 ? 'rgba(22, 163, 74, 1)' : 'rgba(220, 38, 38, 1)');
+
+        // 使用混合型圖表雙軸 (Mixed Chart Dual Y-axis)
+        statsChart = new Chart(ctx, { 
+            type: 'bar', // 主體型態預設為 bar
+            data: { 
+                labels: labels, 
+                datasets: [
+                    { 
+                        label: '勝率 (%)', 
+                        data: winRates, 
+                        type: 'line', // 勝率改為折線圖以利辨識
+                        borderColor: 'rgba(67, 97, 238, 1)', 
+                        backgroundColor: 'rgba(67, 97, 238, 0.2)',
+                        borderWidth: 2, 
+                        tension: 0.3,
+                        pointBackgroundColor: 'rgba(67, 97, 238, 1)',
+                        yAxisID: 'y' // 綁定左側 Y 軸
+                    },
+                    {
+                        label: '盈虧 (P&L)',
+                        data: pnls,
+                        type: 'bar', // 盈虧為直條圖
+                        backgroundColor: pnlColors,
+                        borderColor: pnlBorders,
+                        borderWidth: 1,
+                        yAxisID: 'y1' // 綁定右側 Y 軸
+                    }
+                ] 
+            }, 
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                scales: { 
+                    y: { 
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        beginAtZero: true, 
+                        max: 100,
+                        title: { display: true, text: '勝率 (%)', color: '#4361ee' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        beginAtZero: true,
+                        grid: { drawOnChartArea: false }, // 避免網格線重疊
+                        title: { display: true, text: '總盈虧 ($)', color: '#334155' }
+                    }
+                }, 
+                plugins: { 
+                    tooltip: { 
+                        callbacks: { 
+                            label: function(context) { 
+                                const idx = context.dataIndex; 
+                                if (context.datasetIndex === 0) { // 勝率
+                                    return `勝率: ${context.parsed.y.toFixed(1)}% (${buckets[labels[idx]].wins}/${counts[idx]})`; 
+                                } else { // 盈虧
+                                    return `盈虧: ${context.parsed.y >= 0 ? '+' : ''}$${context.parsed.y.toFixed(2)}`;
+                                }
+                            } 
+                        } 
+                    } 
+                } 
+            } 
+        });
+
         const tbody = document.getElementById('statsTableBody'); tbody.innerHTML = '';
-        labels.forEach(k => { const row = document.createElement('tr'); const wr = buckets[k].total > 0 ? (buckets[k].wins / buckets[k].total * 100).toFixed(1) : '0.0'; row.innerHTML = `<td>${k}</td><td>${buckets[k].wins}/${buckets[k].total - buckets[k].wins}</td><td style="font-weight:bold; color:${parseFloat(wr)>=50?'#16a34a':'#dc2626'}">${wr}%</td>`; tbody.appendChild(row); });
+        labels.forEach(k => { 
+            const row = document.createElement('tr'); 
+            const wr = buckets[k].total > 0 ? (buckets[k].wins / buckets[k].total * 100).toFixed(1) : '0.0'; 
+            
+            // 處理盈虧的顯示數值與顏色
+            const pnlValue = buckets[k].pnl;
+            const pnlColor = pnlValue > 0 ? '#16a34a' : (pnlValue < 0 ? '#dc2626' : '#64748b');
+            const pnlText = (pnlValue > 0 ? '+' : '') + '$' + pnlValue.toFixed(2);
+
+            row.innerHTML = `
+                <td>${k}</td>
+                <td>${buckets[k].wins}/${buckets[k].total - buckets[k].wins}</td>
+                <td style="font-weight:bold; color:${parseFloat(wr)>=50?'#16a34a':'#dc2626'}">${wr}%</td>
+                <td style="font-weight:bold; color:${pnlColor}">${pnlText}</td>
+            `; 
+            tbody.appendChild(row); 
+        });
         document.getElementById('statsModal').style.display = 'flex';
     }
 
@@ -847,6 +969,9 @@
     let progressInterval = null;
 
     async function fetchData() {
+        currentFetchId++; // 每次呼叫時增加請求 ID
+        const fetchId = currentFetchId; 
+
         const sport = currentSport;
         const url = urls[sport];
         
@@ -911,6 +1036,9 @@
 
             if (!success || !html) throw new Error('所有線路皆無法取得數據，請稍後再試');
             
+            // 防禦機制：若在此期間使用者切換了賽事觸發新請求，舊請求直接放棄
+            if (fetchId !== currentFetchId) return;
+
             clearInterval(progressInterval);
             barFill.style.width = '100%';
             await new Promise(r => setTimeout(r, 200));
@@ -1024,6 +1152,8 @@
             }, 400); 
 
         } catch (err) { 
+            if (fetchId !== currentFetchId) return; // 舊請求報錯不再干擾當前畫面
+
             clearInterval(progressInterval);
             barFill.style.width = '100%';
             barFill.style.backgroundColor = '#dc2626'; 
